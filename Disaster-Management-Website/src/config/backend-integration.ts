@@ -13,13 +13,22 @@ export interface BackendConfig {
 
 import { getEnvVar, isDevelopment, isEnvVarConfigured } from '../utils/envUtils';
 
-// Create backend configurations - disabled for offline-first mode
+// Create backend configurations
 const createBackendConfigs = (): Record<string, BackendConfig> => {
   const configs: Record<string, BackendConfig> = {};
 
-  // All backend configurations are disabled for offline-first mode
-  // The system will operate entirely with localStorage
+  // Express backend (default)
+  const viteEnv = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (window as any).env || {};
+  configs['express'] = {
+    name: 'Express Backend',
+    baseUrl: viteEnv.VITE_EXPRESS_BACKEND_URL || 'http://localhost:4000/api',
+    type: 'express',
+    healthEndpoint: '/health',
+    authEndpoint: '/auth/login',
+    timeout: 5000
+  };
 
+  // Add more backends as needed
   return configs;
 };
 
@@ -29,21 +38,14 @@ export class BackendManager {
   private currentBackend: BackendConfig;
   private fallbackBackend: BackendConfig;
   private availableBackends: BackendConfig[] = [];
-  private isOfflineMode: boolean = true;
+  private isOfflineMode: boolean = false;
 
   constructor() {
-    // Initialize with offline-first configuration
-    this.currentBackend = {
-      name: 'Offline Mode',
-      baseUrl: '',
-      type: 'mongodb',
-      healthEndpoint: '',
-      authEndpoint: '',
-      timeout: 0
-    };
+    // Use Express backend by default
+    this.currentBackend = backends['express'];
     this.fallbackBackend = this.currentBackend;
-    
-    console.log('🔧 Backend Manager initialized in offline-first mode');
+    this.isOfflineMode = false;
+    console.log('🔧 Backend Manager initialized with Express backend');
   }
 
   private determineBackendType(): string {
