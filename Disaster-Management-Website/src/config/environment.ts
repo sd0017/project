@@ -3,15 +3,14 @@
 import { getEnvVar } from '../utils/envUtils';
 
 export const config = {
-  // Backend API configuration - offline-first mode
+  // Backend API configuration - Express backend
   api: {
-    baseUrl: 'offline-mode',
-    timeout: 0,
-    retryAttempts: 0,
-    // Offline-first configuration - no external backends
+    baseUrl: import.meta.env.VITE_EXPRESS_BACKEND_URL || 'http://localhost:4000/api',
+    timeout: 5000,
+    retryAttempts: 2,
     externalBackendUrl: '',
     productionBackendUrl: '',
-    backendType: 'offline',
+    backendType: 'express',
   },
   
   // Authentication settings
