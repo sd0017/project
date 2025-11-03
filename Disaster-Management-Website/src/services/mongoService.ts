@@ -1,52 +1,504 @@
-// MongoDB Service - Ready for MongoDB integration
-// This service provides a clean interface for MongoDB operations
-// and falls back to localStorage when MongoDB is not available
+import { MongoClient, Db, Collection, ObjectId, Document } from 'mongodb';import { MongoClient, Db, Collection, ObjectId } from 'mongodb';
 
-import { mongoConfig } from '../config/mongodb';
+import { RescueCenter, Guest, DisasterStats, Notification, AuditLog } from '../types/database';import { RescueCenter, Guest, DisasterStats, Notification, AuditLog } from '../types/database';
 
-export interface MongoUser {
-  _id?: string;
-  id: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-  role: 'citizen' | 'government' | 'rescue-center';
-  employeeId?: string;
-  centerId?: string;
-  profile?: any;
-  createdAt: string;
-  updatedAt: string;
-}
 
-export interface MongoRescueCenter {
-  _id?: string;
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  totalCapacity: number;
-  currentGuests: number;
-  availableCapacity: number;
-  waterLevel: number;
-  foodLevel: number;
-  phone: string;
-  address: string;
-  facilities: string[];
-  status: 'active' | 'inactive' | 'full' | 'maintenance';
-  lastUpdated: string;
-  emergencyContacts: {
-    primary: string;
-    secondary?: string;
-  };
-  supplies: {
-    medical: number;
-    bedding: number;
-    clothing: number;
-  };
-  staffCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+
+class MongoService {import type { Document } from 'mongodb';
+
+  private client: MongoClient | null = null;
+
+  private db: Db | null = null;class MongoService {
+
+  private collections: {  private client: MongoClient | null = null;
+
+    centers: Collection<RescueCenter & Document>;  private db: Db | null = null;
+
+    guests: Collection<Guest & Document>;  private collections: {
+
+    stats: Collection<DisasterStats & Document>;    centers: Collection<RescueCenter & Document>;
+
+    notifications: Collection<Notification & Document>;    guests: Collection<Guest & Document>;
+
+    audit: Collection<AuditLog & Document>;    stats: Collection<DisasterStats & Document>;
+
+  } | null = null;    notifications: Collection<Notification & Document>;
+
+    audit: Collection<AuditLog & Document>;
+
+  constructor(private uri: string, private dbName: string) {}  } | null = null;
+
+
+
+  async connect() {  constructor(private uri: string, private dbName: string) {}
+
+    try {
+
+      if (!this.client) {  async connect() {
+
+        this.client = await MongoClient.connect(this.uri);    try {
+
+        this.db = this.client.db(this.dbName);      if (!this.client) {
+
+        this.collections = {        this.client = await MongoClient.connect(this.uri);
+
+          centers: this.db.collection<RescueCenter & Document>('centers'),        this.db = this.client.db(this.dbName);
+
+          guests: this.db.collection<Guest & Document>('guests'),        this.collections = {
+
+          stats: this.db.collection<DisasterStats & Document>('stats'),          centers: this.db.collection<RescueCenter>('centers'),
+
+          notifications: this.db.collection<Notification & Document>('notifications'),          guests: this.db.collection<Guest>('guests'),
+
+          audit: this.db.collection<AuditLog & Document>('audit')          stats: this.db.collection<DisasterStats>('stats'),
+
+        };          notifications: this.db.collection<Notification>('notifications'),
+
+          audit: this.db.collection<AuditLog>('audit')
+
+        // Create indexes        };
+
+        await this.createIndexes();
+
+      }        // Create indexes
+
+      return this.client;        await this.createIndexes();
+
+    } catch (error) {      }
+
+      console.error('Failed to connect to MongoDB:', error);      return this.client;
+
+      throw error;    } catch (error) {
+
+    }      console.error('Failed to connect to MongoDB:', error);
+
+  }      throw error;
+
+    }
+
+  private async createIndexes() {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+  private async createIndexes() {
+
+    // Centers indexes    if (!this.collections) throw new Error('Database not connected');
+
+    await this.collections.centers.createIndex({ 'location': '2dsphere' });
+
+    await this.collections.centers.createIndex({ 'status': 1 });    // Create indexes
+
+    await this.collections.centers.createIndex({ 'name': 1 });    await this.collections.centers.createIndex({ 'location': '2dsphere' });
+
+    await this.collections.centers.createIndex({ 'status': 1 });
+
+    // Guests indexes    await this.collections.centers.createIndex({ 'name': 1 });
+
+    await this.collections.guests.createIndex({ 'stay.centerId': 1 });
+
+    await this.collections.guests.createIndex({ 'personalInfo.aadharNumber': 1 }, { unique: true, sparse: true });    // Guests indexes
+
+    await this.collections.guests.createIndex({     await this.collections.guests.createIndex({ 'stay.centerId': 1 });
+
+      'personalInfo.firstName': 'text',     await this.collections.guests.createIndex({ 'personalInfo.aadharNumber': 1 }, { unique: true, sparse: true });
+
+      'personalInfo.lastName': 'text',    await this.collections.guests.createIndex({ 
+
+      'contact.phone': 'text'      'personalInfo.firstName': 'text', 
+
+    });      'personalInfo.lastName': 'text',
+
+      'contact.phone': 'text'
+
+    // Notifications indexes    });
+
+    await this.collections.notifications.createIndex({ 'target.centerId': 1 });
+
+    await this.collections.notifications.createIndex({ 'target.userId': 1 });    // Notifications indexes
+
+    await this.collections.notifications.createIndex({ 'expiresAt': 1 }, { expireAfterSeconds: 0 });    await this.collections.notifications.createIndex({ 'target.centerId': 1 });
+
+    await this.collections.notifications.createIndex({ 'target.userId': 1 });
+
+    // Audit logs indexes    await this.collections.notifications.createIndex({ 'expiresAt': 1 }, { expireAfterSeconds: 0 });
+
+    await this.collections.audit.createIndex({ 'entityType': 1, 'entityId': 1 });
+
+    await this.collections.audit.createIndex({ 'createdAt': 1 });    // Audit logs indexes
+
+  }    await this.collections.audit.createIndex({ 'entityType': 1, 'entityId': 1 });
+
+    await this.collections.audit.createIndex({ 'createdAt': 1 });
+
+  async disconnect() {  }
+
+    if (this.client) {
+
+      await this.client.close();  async disconnect() {
+
+      this.client = null;    if (this.client) {
+
+      this.db = null;      await this.client.close();
+
+      this.collections = null;      this.client = null;
+
+    }      this.db = null;
+
+  }      this.collections = null;
+
+    }
+
+  // Rescue Center Operations  }
+
+  async getCenters() {
+
+    if (!this.collections) throw new Error('Database not connected');  // Rescue Center Operations
+
+    return this.collections.centers.find().toArray();  async getCenters() {
+
+  }    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.centers.find().toArray();
+
+  async getCenterById(id: string | ObjectId) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.centers.findOne({ _id: new ObjectId(id) });  async getCenterById(id: string | ObjectId) {
+
+  }    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.centers.findOne({ _id: new ObjectId(id) });
+
+  async createCenter(center: Omit<RescueCenter, '_id' | 'createdAt' | 'updatedAt'>) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    const now = new Date();  async createCenter(center: Omit<RescueCenter, '_id' | 'createdAt' | 'updatedAt'>) {
+
+    const newCenter: RescueCenter = {    if (!this.collections) throw new Error('Database not connected');
+
+      ...center,    const now = new Date();
+
+      createdAt: now,    const newCenter: RescueCenter = {
+
+      updatedAt: now      ...center,
+
+    };      createdAt: now,
+
+    const result = await this.collections.centers.insertOne(newCenter);      updatedAt: now
+
+    return this.getCenterById(result.insertedId);    };
+
+  }    const result = await this.collections.centers.insertOne(newCenter);
+
+    return this.getCenterById(result.insertedId);
+
+  async updateCenter(id: string | ObjectId, updates: Partial<RescueCenter>) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    const now = new Date();  async updateCenter(id: string | ObjectId, updates: Partial<RescueCenter>) {
+
+    const result = await this.collections.centers.findOneAndUpdate(    if (!this.collections) throw new Error('Database not connected');
+
+      { _id: new ObjectId(id) },    const now = new Date();
+
+      {     const result = await this.collections.centers.findOneAndUpdate(
+
+        $set: {       { _id: new ObjectId(id) },
+
+          ...updates,      { 
+
+          updatedAt: now         $set: { 
+
+        }           ...updates,
+
+      },          updatedAt: now 
+
+      { returnDocument: 'after' }        } 
+
+    );      },
+
+    return result ? result : null;      { returnDocument: 'after' }
+
+  }    );
+
+    return result ? result : null;
+
+  async deleteCenter(id: string | ObjectId) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    await this.collections.centers.deleteOne({ _id: new ObjectId(id) });  async deleteCenter(id: string | ObjectId) {
+
+  }    if (!this.collections) throw new Error('Database not connected');
+
+    await this.collections.centers.deleteOne({ _id: new ObjectId(id) });
+
+  // Guest Operations  }
+
+  async getGuests(query: Partial<Guest> = {}) {
+
+    if (!this.collections) throw new Error('Database not connected');  // Guest Operations
+
+    return this.collections.guests.find(query).toArray();  async getGuests(query: Partial<Guest> = {}) {
+
+  }    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.guests.find(query).toArray();
+
+  async getGuestById(id: string | ObjectId) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.guests.findOne({ _id: new ObjectId(id) });  async getGuestById(id: string | ObjectId) {
+
+  }    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.guests.findOne({ _id: new ObjectId(id) });
+
+  async getGuestsByCenter(centerId: string | ObjectId) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    return this.collections.guests.find({   async getGuestsByCenter(centerId: string | ObjectId) {
+
+      'stay.centerId': new ObjectId(centerId),    if (!this.collections) throw new Error('Database not connected');
+
+      'stay.status': { $ne: 'discharged' }    return this.collections.guests.find({ 
+
+    }).toArray();      'stay.centerId': new ObjectId(centerId),
+
+  }      'stay.status': { $ne: 'discharged' }
+
+    }).toArray();
+
+  async createGuest(guest: Omit<Guest, '_id' | 'createdAt' | 'updatedAt'>) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    const now = new Date();  async createGuest(guest: Omit<Guest, '_id' | 'createdAt' | 'updatedAt'>) {
+
+    const newGuest: Guest = {    if (!this.collections) throw new Error('Database not connected');
+
+      ...guest,    const now = new Date();
+
+      createdAt: now,    const newGuest: Guest = {
+
+      updatedAt: now      ...guest,
+
+    };      createdAt: now,
+
+    const result = await this.collections.guests.insertOne(newGuest);      updatedAt: now
+
+    return this.getGuestById(result.insertedId);    };
+
+  }    const result = await this.collections.guests.insertOne(newGuest);
+
+    return this.getGuestById(result.insertedId);
+
+  async updateGuest(id: string | ObjectId, updates: Partial<Guest>) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    const now = new Date();  async updateGuest(id: string | ObjectId, updates: Partial<Guest>) {
+
+    const result = await this.collections.guests.findOneAndUpdate(    if (!this.collections) throw new Error('Database not connected');
+
+      { _id: new ObjectId(id) },    const now = new Date();
+
+      {     const result = await this.collections.guests.findOneAndUpdate(
+
+        $set: {       { _id: new ObjectId(id) },
+
+          ...updates,      { 
+
+          updatedAt: now         $set: { 
+
+        }           ...updates,
+
+      },          updatedAt: now 
+
+      { returnDocument: 'after' }        } 
+
+    );      },
+
+    return result ? result : null;      { returnDocument: 'after' }
+
+  }    );
+
+    return result ? result : null;
+
+  async deleteGuest(id: string | ObjectId) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    await this.collections.guests.deleteOne({ _id: new ObjectId(id) });  async deleteGuest(id: string | ObjectId) {
+
+  }    if (!this.collections) throw new Error('Database not connected');
+
+    await this.collections.guests.deleteOne({ _id: new ObjectId(id) });
+
+  // Statistics Operations  }
+
+  async getDisasterStats() {
+
+    if (!this.collections) throw new Error('Database not connected');  // Statistics Operations
+
+    const stats = await this.collections.stats.findOne();  async getDisasterStats() {
+
+    if (!stats) {    if (!this.collections) throw new Error('Database not connected');
+
+      // Create initial stats if not exists    const stats = await this.collections.stats.findOne();
+
+      const initialStats: DisasterStats = {    if (!stats) {
+
+        totalCenters: 0,      // Create initial stats if not exists
+
+        totalGuests: 0,      const initialStats: DisasterStats = {
+
+        availableCapacity: 0,        totalCenters: 0,
+
+        occupancyRate: 0,        totalGuests: 0,
+
+        resourceStatus: {        availableCapacity: 0,
+
+          water: 100,        occupancyRate: 0,
+
+          food: 100,        resourceStatus: {
+
+          medical: 100          water: 100,
+
+        },          food: 100,
+
+        criticalCenters: 0,          medical: 100
+
+        lastUpdated: new Date(),        },
+
+        createdAt: new Date(),        criticalCenters: 0,
+
+        updatedAt: new Date()        lastUpdated: new Date(),
+
+      };        createdAt: new Date(),
+
+      await this.collections.stats.insertOne(initialStats);        updatedAt: new Date()
+
+      return initialStats;      };
+
+    }      await this.collections.stats.insertOne(initialStats);
+
+    return stats;      return initialStats;
+
+  }    }
+
+    return stats;
+
+  async updateStats(updates: Partial<DisasterStats>) {  }
+
+    if (!this.collections) throw new Error('Database not connected');
+
+    const now = new Date();  async updateStats(updates: Partial<DisasterStats>) {
+
+    const result = await this.collections.stats.findOneAndUpdate(    if (!this.collections) throw new Error('Database not connected');
+
+      {},    const now = new Date();
+
+      {     const result = await this.collections.stats.findOneAndUpdate(
+
+        $set: {       {},
+
+          ...updates,      { 
+
+          lastUpdated: now,        $set: { 
+
+          updatedAt: now           ...updates,
+
+        }           lastUpdated: now,
+
+      },          updatedAt: now 
+
+      {         } 
+
+        returnDocument: 'after',      },
+
+        upsert: true       { 
+
+      }        returnDocument: 'after',
+
+    );        upsert: true 
+
+    return result ? result : null;      }
+
+  }    );
+
+    return result ? result : null;
+
+  // Notification Operations  }
+
+  async createNotification(notification: Omit<Notification, '_id' | 'createdAt' | 'updatedAt'>) {
+
+    if (!this.collections) throw new Error('Database not connected');  // Notification Operations
+
+    const now = new Date();  async createNotification(notification: Omit<Notification, '_id' | 'createdAt' | 'updatedAt'>) {
+
+    const newNotification: Notification = {    if (!this.collections) throw new Error('Database not connected');
+
+      ...notification,    const now = new Date();
+
+      createdAt: now,    const newNotification: Notification = {
+
+      updatedAt: now      ...notification,
+
+    };      createdAt: now,
+
+    return this.collections.notifications.insertOne(newNotification);      updatedAt: now
+
+  }    };
+
+    return this.collections.notifications.insertOne(newNotification);
+
+  // Audit Operations  }
+
+  async createAuditLog(log: Omit<AuditLog, '_id' | 'createdAt' | 'updatedAt'>) {
+
+    if (!this.collections) throw new Error('Database not connected');  // Audit Operations
+
+    const now = new Date();  async createAuditLog(log: Omit<AuditLog, '_id' | 'createdAt' | 'updatedAt'>) {
+
+    const newLog: AuditLog = {    if (!this.collections) throw new Error('Database not connected');
+
+      ...log,    const now = new Date();
+
+      createdAt: now,    const newLog: AuditLog = {
+
+      updatedAt: now      ...log,
+
+    };      createdAt: now,
+
+    return this.collections.audit.insertOne(newLog);      updatedAt: now
+
+  }    };
+
+}    return this.collections.audit.insertOne(newLog);
+
+  }
+
+// Create and export service instance}
+
+const mongoService = new MongoService(
+
+  process.env.MONGODB_URI || 'mongodb://localhost:27017',// Create and export service instance
+
+  process.env.MONGODB_DB || 'disaster_management'const mongoService = new MongoService(
+
+);  process.env.MONGODB_URI || 'mongodb://localhost:27017',
+
+  process.env.MONGODB_DB || 'disaster_management'
+
+export default mongoService;);
+
+export default mongoService;
 
 export interface MongoGuest {
   _id?: string;

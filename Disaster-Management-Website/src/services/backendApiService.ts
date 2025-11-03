@@ -103,9 +103,43 @@ export class BackendApiService {
     endpoint: string, 
     options: RequestInit = {}
   ): Promise<T> {
-    // Always throw OFFLINE_MODE error in offline-first mode - no network requests
-    console.log(`📱 Offline-first mode: Blocking request to ${endpoint}`);
-    throw new Error('OFFLINE_MODE');
+    // Build full URL using backend manager
+    const url = backendManager.getApiUrl(endpoint);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> || {})
+    };
+
+    const token = this.getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const fetchOptions: RequestInit = {
+      method: options.method || 'GET',
+      headers,
+      body: options.body,
+    };
+
+    const resp = await fetch(url, fetchOptions);
+
+    if (!resp.ok) {
+      // Map common status codes
+      if (resp.status === 401 || resp.status === 403) {
+        const text = await resp.text().catch(() => '');
+        const err = new Error('UNAUTHORIZED: ' + text);
+        (err as any).status = resp.status;
+        throw err;
+      }
+      const text = await resp.text().catch(() => '');
+      const err = new Error(`HTTP ${resp.status}: ${text}`);
+      (err as any).status = resp.status;
+      throw err;
+    }
+
+    // If no content
+    if (resp.status === 204) return (null as unknown) as T;
+
+    const data = await resp.json().catch(() => null);
+    return data as T;
   }
 
   async get<T>(endpoint: string): Promise<T> {

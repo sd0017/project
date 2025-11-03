@@ -1,11 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabaseDatabaseService, RescueCenter as SupabaseRescueCenter, Guest as SupabaseGuest, DisasterStats as SupabaseDisasterStats } from '../services/supabaseDatabaseService';
+import { RescueCenter, Guest, DisasterStats } from '../types/database';
+import { supabaseDatabaseService } from '../services/supabaseDatabaseService';
+import { initSocketClient } from '../services/socketClient';
 import { notificationService } from '../services/notificationService';
-
-// Re-export types from Supabase service for consistency
-export type RescueCenter = SupabaseRescueCenter;
-export type Guest = SupabaseGuest;
-export type DisasterStats = SupabaseDisasterStats;
+import { demoCenters, demoGuests, demoStats } from '../data/demoData';
 
 // Types and interfaces moved to httpDatabaseService
 
@@ -66,6 +64,25 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
     initializeData().finally(() => {
       clearTimeout(timeoutId);
     });
+
+    // Initialize Socket.IO client and subscribe to server events
+    try {
+      const socket = initSocketClient();
+      socket.on('guest:created', (guest: any) => {
+        setGuests(prev => [guest, ...prev]);
+      });
+      socket.on('guest:updated', (guest: any) => {
+        setGuests(prev => prev.map(g => g.id === guest.id ? guest : g));
+      });
+      socket.on('guest:deleted', ({ id }: { id: string }) => {
+        setGuests(prev => prev.filter(g => g.id !== id));
+      });
+      socket.on('center:updated', (center: any) => {
+        setRescueCenters(prev => prev.map(c => c.id === center.id ? { ...c, ...center } : c));
+      });
+    } catch (e) {
+      console.log('Socket.IO client not initialized:', e);
+    }
 
     return () => {
       clearTimeout(timeoutId);

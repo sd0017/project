@@ -1,35 +1,57 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import compression from 'compression';
+import { requestContext, requestLogger } from './middleware/logger.middleware';
+import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import routes from './routes';
 
 export const app = express();
 
-// Configure CORS for all origins in development
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// Apply request context and logging early
+app.use(requestContext);
+app.use(requestLogger);
 
-// Parse JSON bodies
-app.use(express.json());
-
-// Add basic request logging
-app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.path}`);
+// Basic security headers
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
 });
 
-// Health check endpoint
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// Configure CORS based on environment
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.ALLOWED_ORIGINS?.split(',') 
+    : '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400 // 24 hours
+}));
 
-// Register all API routes
+// Compression and parsing
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// API Health check endpoint
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    uptime: process.uptime()
+  });
+});
+
+// Mount all API routes under /api prefix
 app.use('/api', routes);
 
-// Basic error handler
-app.use((err: any, _req: any, res: any, _next: any) => {
-  console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
-});
+// Handle 404s
+app.use(notFoundHandler);
+
+// Global error handler
+app.use(errorHandler);
 
 export default app;
