@@ -4,13 +4,20 @@ dotenv.config();
 import mongoose from 'mongoose';
 import http from 'http';
 import app from './app';
+import { initSocket } from './socket';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 
 const PORT = process.env.PORT || 4000;
-const MONGO_URI = process.env.MONGODB_URI;
+let MONGO_URI = process.env.MONGODB_URI;
+let usingMemoryServer = false;
 
-if (!MONGO_URI) {
-  console.error('❌ MONGODB_URI is not defined in .env file');
-  process.exit(1);
+async function ensureMongoUri() {
+  if (MONGO_URI) return MONGO_URI;
+  console.log('⚠️ MONGODB_URI not provided — starting in-memory MongoDB for development');
+  const mongod = await MongoMemoryServer.create();
+  MONGO_URI = mongod.getUri();
+  usingMemoryServer = true;
+  return MONGO_URI;
 }
 
 console.log('📊 Debug: Starting server...');
@@ -20,20 +27,28 @@ console.log('📊 Environment:', {
   MONGO_URI: MONGO_URI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@') // Hide credentials in logs
 });
 
-const server = http.createServer(app);
+    const server = http.createServer(app);
+    // Initialize Socket.IO and make it available to controllers
+    try {
+      initSocket(server);
+      console.log('🔔 Socket.IO initialized');
+    } catch (err) {
+      console.warn('⚠️ Failed to initialize Socket.IO', err);
+    }
 
 async function start() {
   try {
-    console.log('🔄 Connecting to MongoDB Atlas...');
+    console.log('🔄 Connecting to MongoDB...');
     
-    await mongoose.connect(MONGO_URI as string, {
+    const uriToUse = await ensureMongoUri();
+    await mongoose.connect(uriToUse as string, {
       serverSelectionTimeoutMS: 10000, // 10 second timeout
       socketTimeoutMS: 45000, // 45 second timeout
       retryWrites: true,
       w: 'majority'
     });
     
-    console.log('✅ Connected to MongoDB Atlas');
+    console.log('✅ Connected to MongoDB');
     
     // Log some connection info for debugging
     const db = mongoose.connection;

@@ -53,137 +53,105 @@ export interface RegisterData {
 
 export class HttpAuthService {
   async register(userData: RegisterData): Promise<AuthResponse> {
-    // Always use offline mode for registration
-    console.log('Using offline mode for registration');
-    
-    const users = this.getMockUsers();
-    
-    // Check if user already exists
-    if (users.find(u => u.email === userData.email)) {
-      throw new Error('User already exists');
+    try {
+      const resp = await backendApiService.post<AuthResponse>('/auth/register', {
+        email: userData.email,
+        password: (userData as any).password || '',
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+      });
+      if (resp?.token) {
+        backendApiService.setToken(resp.token);
+      }
+      return resp;
+    } catch (error) {
+      console.log('Registration via API failed, falling back to offline mock', error);
+      // Offline fallback
+      const users = this.getMockUsers();
+      if (users.find(u => u.email === userData.email)) throw new Error('User already exists');
+      const newUser = this.createMockUser(userData);
+      const token = this.generateMockToken(newUser);
+      users.push(newUser);
+      this.saveMockUsers(users);
+      backendApiService.setToken(token);
+      return { token, user: newUser };
     }
-    
-    const newUser = this.createMockUser(userData);
-    const token = this.generateMockToken(newUser);
-    
-    users.push(newUser);
-    this.saveMockUsers(users);
-    backendApiService.setToken(token);
-    
-    return { token, user: newUser };
   }
 
   async login(email: string, password: string): Promise<AuthResponse> {
-    // Always start with offline mode to prevent backend connection attempts
-    console.log('Using offline mode for login');
-    
-    const users = this.getMockUsers();
-    let user = users.find(u => u.email === email);
-    
-    // If user doesn't exist in mock data, create a new one
-    if (!user) {
-      user = {
-        id: `user_${Date.now()}`,
-        email: email,
-        firstName: email.split('@')[0],
-        lastName: 'User',
-        role: 'citizen'
-      };
-      users.push(user);
-      this.saveMockUsers(users);
+    try {
+      const resp = await backendApiService.post<AuthResponse>('/auth/login', { email, password });
+      if (resp?.token) backendApiService.setToken(resp.token);
+      return resp;
+    } catch (error) {
+      console.log('Login via API failed, falling back to offline mock', error);
+      // Offline mock behavior
+      const users = this.getMockUsers();
+      let user = users.find(u => u.email === email);
+      if (!user) {
+        user = { id: `user_${Date.now()}`, email, firstName: email.split('@')[0], lastName: 'User', role: 'citizen' } as any;
+        users.push(user);
+        this.saveMockUsers(users);
+      }
+      const token = this.generateMockToken(user);
+      backendApiService.setToken(token);
+      return { token, user };
     }
-    
-    // In offline mode, any password works
-    const token = this.generateMockToken(user);
-    backendApiService.setToken(token);
-    
-    return { token, user };
   }
 
   async governmentLogin(employeeId: string, password: string): Promise<AuthResponse> {
-    // Always use offline mode for government login
-    console.log('Using offline mode for government login');
-    
-    // Mock government user
-    if (employeeId === 'GOV001' && password === 'password123') {
-      const user: User = {
-        id: 'gov_001',
-        email: 'government@disaster.gov.in',
-        role: 'government',
-        employeeId: employeeId
-      };
-      const token = this.generateMockToken(user);
-      backendApiService.setToken(token);
-      return { token, user };
+    try {
+      const resp = await backendApiService.post<AuthResponse>('/auth/government-login', { employeeId, password });
+      if (resp?.token) backendApiService.setToken(resp.token);
+      return resp;
+    } catch (error) {
+      console.log('Government login via API failed, falling back to offline mock', error);
+      if (employeeId === 'GOV001' && password === 'password123') {
+        const user: User = { id: 'gov_001', email: 'government@disaster.gov.in', role: 'government', employeeId } as any;
+        const token = this.generateMockToken(user);
+        backendApiService.setToken(token);
+        return { token, user };
+      }
+      throw new Error('Invalid government credentials');
     }
-    
-    throw new Error('Invalid government credentials');
   }
 
   async rescueCenterLogin(centerId: string, password: string): Promise<AuthResponse> {
-    // Always use offline mode for rescue center login
-    console.log('Using offline mode for rescue center login');
-    
-    // Mock rescue center user
-    if (centerId === 'RC001' && password === 'rescue123') {
-      const user: User = {
-        id: 'rc_001',
-        email: 'center@rescue.gov.in',
-        role: 'rescue-center',
-        centerId: centerId
-      };
-      const token = this.generateMockToken(user);
-      backendApiService.setToken(token);
-      return { token, user };
+    try {
+      const resp = await backendApiService.post<AuthResponse>('/auth/rescue-login', { centerId, password });
+      if (resp?.token) backendApiService.setToken(resp.token);
+      return resp;
+    } catch (error) {
+      console.log('Rescue center login via API failed, falling back to offline mock', error);
+      if (centerId === 'RC001' && password === 'rescue123') {
+        const user: User = { id: 'rc_001', email: 'center@rescue.gov.in', role: 'rescue-center', centerId } as any;
+        const token = this.generateMockToken(user);
+        backendApiService.setToken(token);
+        return { token, user };
+      }
+      throw new Error('Invalid rescue center credentials');
     }
-    
-    throw new Error('Invalid rescue center credentials');
   }
 
   async getCurrentUser(): Promise<User> {
-    // Always use offline mode to get current user
-    const token = backendApiService.getToken();
-    if (!token) {
-      throw new Error('No valid session');
-    }
-    
-    // Handle mock tokens
-    if (token.startsWith('mock_token_')) {
-      // Extract user ID from mock token
-      const userId = token.split('_')[2];
-      const users = this.getMockUsers();
-      const user = users.find(u => u.id === userId);
-      
-      if (user) {
-        return user;
+    try {
+      const user = await backendApiService.get<User>('/auth/me');
+      return user;
+    } catch (error) {
+      console.log('Fetching current user via API failed, falling back to offline mock', error);
+      const token = backendApiService.getToken();
+      if (!token) throw new Error('No valid session');
+      if (token.startsWith('mock_token_')) {
+        const userId = token.split('_')[2];
+        const users = this.getMockUsers();
+        const user = users.find(u => u.id === userId);
+        if (user) return user;
+        if (token.includes('gov_001')) return { id: 'gov_001', email: 'government@disaster.gov.in', role: 'government', employeeId: 'GOV001', firstName: 'Government', lastName: 'Official' } as any;
+        if (token.includes('rc_001')) return { id: 'rc_001', email: 'center@rescue.gov.in', role: 'rescue-center', centerId: 'RC001', firstName: 'Rescue', lastName: 'Center' } as any;
+        throw new Error('User not found');
       }
-      
-      // Check for special accounts
-      if (token.includes('gov_001')) {
-        return {
-          id: 'gov_001',
-          email: 'government@disaster.gov.in',
-          role: 'government',
-          employeeId: 'GOV001',
-          firstName: 'Government',
-          lastName: 'Official'
-        };
-      } else if (token.includes('rc_001')) {
-        return {
-          id: 'rc_001',
-          email: 'center@rescue.gov.in',
-          role: 'rescue-center',
-          centerId: 'RC001',
-          firstName: 'Rescue',
-          lastName: 'Center'
-        };
-      }
-      
-      throw new Error('User not found');
+      throw new Error('Invalid session token');
     }
-    
-    // For any other token format, assume invalid
-    throw new Error('Invalid session token');
   }
 
   async updateProfile(userId: string, updates: any): Promise<User> {

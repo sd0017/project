@@ -1,11 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabaseDatabaseService, RescueCenter as SupabaseRescueCenter, Guest as SupabaseGuest, DisasterStats as SupabaseDisasterStats } from '../services/supabaseDatabaseService';
+import type { RescueCenter, Guest, DisasterStats } from '../services/httpDatabaseService';
+import { httpDatabaseService } from '../services/httpDatabaseService';
+import { initSocketClient } from '../services/socketClient';
 import { notificationService } from '../services/notificationService';
-
-// Re-export types from Supabase service for consistency
-export type RescueCenter = SupabaseRescueCenter;
-export type Guest = SupabaseGuest;
-export type DisasterStats = SupabaseDisasterStats;
+import { demoCenters, demoGuests, demoStats } from '../data/demoData';
 
 // Types and interfaces moved to httpDatabaseService
 
@@ -48,7 +46,7 @@ export const useUnifiedDatabase = () => {
   return context;
 };
 
-// Supabase-powered unified database provider with offline fallback
+// Server-backed unified database provider with offline fallback
 
 export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [rescueCenters, setRescueCenters] = useState<RescueCenter[]>([]);
@@ -67,6 +65,25 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
       clearTimeout(timeoutId);
     });
 
+    // Initialize Socket.IO client and subscribe to server events
+    try {
+      const socket = initSocketClient();
+      socket.on('guest:created', (guest: Guest) => {
+        setGuests((prev: Guest[]) => [guest, ...prev]);
+      });
+      socket.on('guest:updated', (guest: Guest) => {
+        setGuests((prev: Guest[]) => prev.map((g: Guest) => g._id?.toString() === guest._id?.toString() ? guest : g));
+      });
+      socket.on('guest:deleted', ({ id }: { id: string }) => {
+        setGuests((prev: Guest[]) => prev.filter((g: Guest) => g._id?.toString() !== id));
+      });
+      socket.on('center:updated', (center: RescueCenter) => {
+        setRescueCenters((prev: RescueCenter[]) => prev.map((c: RescueCenter) => c._id?.toString() === center._id?.toString() ? { ...c, ...center } : c));
+      });
+    } catch (e) {
+      console.log('Socket.IO client not initialized:', e);
+    }
+
     return () => {
       clearTimeout(timeoutId);
     };
@@ -75,39 +92,39 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   const initializeData = async () => {
     setLoading(true);
     try {
-      console.log('Initializing with Supabase backend');
+  console.log('Initializing with server HTTP API backend');
       
       // Load offline data first for immediate UI
       loadFallbackData();
       
-      // Try to load data from Supabase in the background
+  // Try to load data from the server HTTP API in the background
       try {
         // Add a timeout to prevent hanging
-        const supabasePromise = Promise.all([
-          supabaseDatabaseService.getAllCenters(),
-          supabaseDatabaseService.getAllGuests()
+        const apiPromise = Promise.all([
+          httpDatabaseService.getAllCenters(),
+          httpDatabaseService.getAllGuests()
         ]);
         
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Supabase initialization timeout')), 8000)
         );
         
-        const [centersFromSupabase, guestsFromSupabase] = await Promise.race([
-          supabasePromise,
+        const [centersFromApi, guestsFromApi] = await Promise.race([
+          apiPromise,
           timeoutPromise
         ]) as [any[], any[]];
         
-        console.log('Successfully loaded data from Supabase');
-        setRescueCenters(centersFromSupabase);
-        setGuests(guestsFromSupabase);
+        console.log('Successfully loaded data from server API');
+        setRescueCenters(centersFromApi);
+        setGuests(guestsFromApi);
         setLastSyncTime(new Date().toISOString());
         
         // Save to localStorage for offline access
-        localStorage.setItem('unifiedRescueCenters', JSON.stringify(centersFromSupabase));
-        localStorage.setItem('unifiedGuests', JSON.stringify(guestsFromSupabase));
+        localStorage.setItem('unifiedRescueCenters', JSON.stringify(centersFromApi));
+        localStorage.setItem('unifiedGuests', JSON.stringify(guestsFromApi));
         
-      } catch (supabaseError) {
-        console.log('Supabase unavailable during initialization, using offline data:', supabaseError);
+      } catch (apiError) {
+        console.log('Server API unavailable during initialization, using offline data:', apiError);
         // Fallback data is already loaded above
       }
     } catch (error) {
@@ -207,6 +224,29 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
         },
         {
           id: 'RC004',
+        const demoCenters: RescueCenter[] = [
+          {
+            _id: undefined,
+            name: 'Central Emergency Shelter',
+            location: { type: 'Point', coordinates: [77.5946, 12.9716] },
+            totalCapacity: 500,
+            currentGuests: 0,
+            availableCapacity: 500,
+            resources: { water: 85, food: 70, medical: 80, bedding: 75, clothing: 60 },
+            contact: {
+              phone: '+91-80-2345-6789',
+              emergency: { primary: '+91-80-2345-6789', secondary: '+91-80-2345-6790' }
+            },
+            address: 'MG Road, Bangalore, Karnataka 560001',
+            facilities: ['Medical Aid', 'Sanitation', 'Power Backup', 'Communication', 'Kitchen'],
+            status: 'active',
+            staffCount: 25,
+            lastUpdated: new Date(),
+            createdAt: new Date('2024-01-15T10:00:00Z'),
+            updatedAt: new Date()
+          },
+          // ...repeat for other centers, updating all fields to match RescueCenter type...
+        ];
           name: 'East Emergency Hub',
           lat: 12.9816,
           lng: 77.6346,
@@ -333,10 +373,10 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   // Rescue Center operations
   const getRescueCenters = async (): Promise<RescueCenter[]> => {
     try {
-      // Try to get fresh data from Supabase
-      const centersFromSupabase = await supabaseDatabaseService.getAllCenters();
-      setRescueCenters(centersFromSupabase);
-      localStorage.setItem('unifiedRescueCenters', JSON.stringify(centersFromSupabase));
+  // Try to get fresh data from server API
+  const centersFromApi = await httpDatabaseService.getAllCenters();
+  setRescueCenters(centersFromApi);
+  localStorage.setItem('unifiedRescueCenters', JSON.stringify(centersFromApi));
       setLastSyncTime(new Date().toISOString());
       return centersFromSupabase;
     } catch (error) {
@@ -347,22 +387,22 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
 
   const getRescueCenterById = async (id: string): Promise<RescueCenter | null> => {
     try {
-      return await supabaseDatabaseService.getCenterById(id);
+      return await httpDatabaseService.getCenterById(id);
     } catch (error) {
-      console.error('Supabase unavailable for getCenterById:', error);
-      return rescueCenters.find(center => center.id === id) || null;
+      console.error('Server API unavailable for getCenterById:', error);
+  return rescueCenters.find((center: RescueCenter) => center._id?.toString() === id) || null;
     }
   };
 
   const updateRescueCenter = async (id: string, updates: Partial<RescueCenter>): Promise<RescueCenter> => {
     setLoading(true);
     try {
-      // Try to update via Supabase first
-      const updatedCenter = await supabaseDatabaseService.updateCenter(id, updates);
+  // Try to update via server API first
+  const updatedCenter = await httpDatabaseService.updateCenter(id, updates);
       
       // Update local state with Supabase response
-      const updatedCenters = rescueCenters.map(center =>
-        center.id === id ? updatedCenter : center
+      const updatedCenters = rescueCenters.map((center: RescueCenter) =>
+        center._id?.toString() === id ? updatedCenter : center
       );
       
       setRescueCenters(updatedCenters);
@@ -398,11 +438,11 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   const addRescueCenter = async (centerData: Omit<RescueCenter, 'id' | 'createdAt' | 'updatedAt'>): Promise<RescueCenter> => {
     setLoading(true);
     try {
-      // Try to create via Supabase first
-      const newCenter = await supabaseDatabaseService.createCenter(centerData);
+  // Try to create via server API first
+  const newCenter = await httpDatabaseService.createCenter(centerData);
       
       // Update local state
-      const updatedCenters = [...rescueCenters, newCenter];
+  const updatedCenters = [...rescueCenters, newCenter];
       setRescueCenters(updatedCenters);
       localStorage.setItem('unifiedRescueCenters', JSON.stringify(updatedCenters));
       
@@ -433,16 +473,16 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   const deleteRescueCenter = async (id: string): Promise<void> => {
     setLoading(true);
     try {
-      // Try to delete via Supabase first (this will also delete associated guests)
-      await supabaseDatabaseService.deleteCenter(id);
+  // Try to delete via server API first (this will also delete associated guests)
+  await httpDatabaseService.deleteCenter(id);
       
       // Update local state
-      const updatedCenters = rescueCenters.filter(center => center.id !== id);
+  const updatedCenters = rescueCenters.filter((center: RescueCenter) => center._id?.toString() !== id);
       setRescueCenters(updatedCenters);
       localStorage.setItem('unifiedRescueCenters', JSON.stringify(updatedCenters));
       
       // Also remove guests from deleted center locally
-      const updatedGuests = guests.filter(guest => guest.centerId !== id);
+  const updatedGuests = guests.filter((guest: Guest) => guest.stay.centerId?.toString() !== id);
       setGuests(updatedGuests);
       localStorage.setItem('unifiedGuests', JSON.stringify(updatedGuests));
       
@@ -451,12 +491,12 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
       console.log('Supabase unavailable, deleting center locally');
       
       // Fallback to local deletion
-      const updatedCenters = rescueCenters.filter(center => center.id !== id);
+  const updatedCenters = rescueCenters.filter((center: RescueCenter) => center._id?.toString() !== id);
       setRescueCenters(updatedCenters);
       localStorage.setItem('unifiedRescueCenters', JSON.stringify(updatedCenters));
       
       // Also remove guests from deleted center
-      const updatedGuests = guests.filter(guest => guest.centerId !== id);
+  const updatedGuests = guests.filter((guest: Guest) => guest.stay.centerId?.toString() !== id);
       setGuests(updatedGuests);
       localStorage.setItem('unifiedGuests', JSON.stringify(updatedGuests));
       
@@ -469,21 +509,21 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   // Guest operations
   const getGuestsByCenter = async (centerId: string): Promise<Guest[]> => {
     try {
-      const supabaseGuests = await supabaseDatabaseService.getGuestsByCenter(centerId);
-      return supabaseGuests;
+  const apiGuests = await httpDatabaseService.getGuestsByCenter(centerId);
+  return apiGuests;
     } catch (error) {
       console.log('Supabase unavailable, using local guest data for center:', centerId);
-      return guests.filter(guest => guest.centerId === centerId);
+  return guests.filter((guest: Guest) => guest.stay.centerId?.toString() === centerId);
     }
   };
 
   const getAllGuests = async (): Promise<Guest[]> => {
     try {
-      const supabaseGuests = await supabaseDatabaseService.getAllGuests();
-      setGuests(supabaseGuests);
-      localStorage.setItem('unifiedGuests', JSON.stringify(supabaseGuests));
+      const apiGuests = await httpDatabaseService.getAllGuests();
+      setGuests(apiGuests);
+      localStorage.setItem('unifiedGuests', JSON.stringify(apiGuests));
       setLastSyncTime(new Date().toISOString());
-      return supabaseGuests;
+      return apiGuests;
     } catch (error) {
       console.log('Supabase unavailable for getAllGuests, using local data');
       
@@ -510,46 +550,46 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
 
   const getGuestById = async (id: string): Promise<Guest | null> => {
     try {
-      return await supabaseDatabaseService.getGuestById(id);
+      return await httpDatabaseService.getGuestById(id);
     } catch (error) {
-      console.log('Supabase unavailable, using local guest data for ID:', id);
-      return guests.find(guest => guest.id === id) || null;
+      console.log('Server API unavailable, using local guest data for ID:', id);
+  return guests.find((guest: Guest) => guest._id?.toString() === id) || null;
     }
   };
 
   const addGuest = async (guestData: Omit<Guest, 'id' | 'createdAt' | 'updatedAt'>): Promise<Guest> => {
     setLoading(true);
     try {
-      // Try to create via Supabase first (this will automatically update center capacity)
-      const newGuest = await supabaseDatabaseService.createGuest(guestData);
+  // Try to create via server API first (this will automatically update center capacity)
+  const newGuest = await httpDatabaseService.createGuest(guestData);
       
       // Update local state
-      const updatedGuests = [...guests, newGuest];
+  const updatedGuests = [...guests, newGuest];
       setGuests(updatedGuests);
       localStorage.setItem('unifiedGuests', JSON.stringify(updatedGuests));
 
       // Refresh center data from Supabase to get updated capacity
       try {
-        const updatedCenter = await supabaseDatabaseService.getCenterById(guestData.centerId);
+  const updatedCenter = await httpDatabaseService.getCenterById(guestData.centerId);
         if (updatedCenter) {
-          const updatedCenters = rescueCenters.map(center =>
-            center.id === guestData.centerId ? updatedCenter : center
+          const updatedCenters = rescueCenters.map((center: RescueCenter) =>
+            center._id?.toString() === guestData.stay.centerId?.toString() ? updatedCenter : center
           );
           setRescueCenters(updatedCenters);
           localStorage.setItem('unifiedRescueCenters', JSON.stringify(updatedCenters));
         }
       } catch (centerError) {
         // If can't get updated center, fall back to local calculation
-        const centerGuests = updatedGuests.filter(guest => guest.centerId === guestData.centerId);
-        const updatedCenters = rescueCenters.map(center =>
-          center.id === guestData.centerId
+        const centerGuests = updatedGuests.filter((guest: Guest) => guest.stay.centerId?.toString() === guestData.stay.centerId?.toString());
+        const updatedCenters = rescueCenters.map((center: RescueCenter) =>
+          center._id?.toString() === guestData.stay.centerId?.toString()
             ? {
                 ...center,
                 currentGuests: centerGuests.length,
                 availableCapacity: center.totalCapacity - centerGuests.length,
                 status: centerGuests.length >= center.totalCapacity ? 'full' as const : 'active' as const,
-                lastUpdated: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
+                lastUpdated: new Date(),
+                updatedAt: new Date()
               }
             : center
         );
@@ -602,12 +642,12 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   const updateGuest = async (id: string, updates: Partial<Guest>): Promise<Guest> => {
     setLoading(true);
     try {
-      // Try to update via Supabase first
-      const updatedGuest = await supabaseDatabaseService.updateGuest(id, updates);
+  // Try to update via server API first
+  const updatedGuest = await httpDatabaseService.updateGuest(id, updates);
       
       // Update local state
-      const updatedGuests = guests.map(guest =>
-        guest.id === id ? updatedGuest : guest
+      const updatedGuests = guests.map((guest: Guest) =>
+        guest._id?.toString() === id ? updatedGuest : guest
       );
       
       setGuests(updatedGuests);
@@ -628,7 +668,7 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
       setGuests(updatedGuests);
       localStorage.setItem('unifiedGuests', JSON.stringify(updatedGuests));
       
-      const updatedGuest = updatedGuests.find(guest => guest.id === id);
+  const updatedGuest = updatedGuests.find((guest: Guest) => guest._id?.toString() === id);
       if (!updatedGuest) {
         throw new Error('Guest not found');
       }
@@ -643,41 +683,41 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   const deleteGuest = async (id: string): Promise<void> => {
     setLoading(true);
     try {
-      const guestToDelete = guests.find(guest => guest.id === id);
+  const guestToDelete = guests.find((guest: Guest) => guest._id?.toString() === id);
       if (!guestToDelete) {
         throw new Error('Guest not found');
       }
 
-      // Try to delete via Supabase first (this will automatically update center capacity)
-      await supabaseDatabaseService.deleteGuest(id);
+  // Try to delete via server API first (this will automatically update center capacity)
+  await httpDatabaseService.deleteGuest(id);
       
       // Update local state
-      const updatedGuests = guests.filter(guest => guest.id !== id);
+  const updatedGuests = guests.filter((guest: Guest) => guest._id?.toString() !== id);
       setGuests(updatedGuests);
       localStorage.setItem('unifiedGuests', JSON.stringify(updatedGuests));
 
       // Refresh center data from Supabase to get updated capacity
       try {
-        const updatedCenter = await supabaseDatabaseService.getCenterById(guestToDelete.centerId);
+  const updatedCenter = await httpDatabaseService.getCenterById(guestToDelete.centerId);
         if (updatedCenter) {
-          const updatedCenters = rescueCenters.map(center =>
-            center.id === guestToDelete.centerId ? updatedCenter : center
+          const updatedCenters = rescueCenters.map((center: RescueCenter) =>
+            center._id?.toString() === guestToDelete?.stay.centerId?.toString() ? updatedCenter : center
           );
           setRescueCenters(updatedCenters);
           localStorage.setItem('unifiedRescueCenters', JSON.stringify(updatedCenters));
         }
       } catch (centerError) {
         // If can't get updated center, fall back to local calculation
-        const centerGuests = updatedGuests.filter(guest => guest.centerId === guestToDelete.centerId);
-        const updatedCenters = rescueCenters.map(center =>
-          center.id === guestToDelete.centerId
+        const centerGuests = updatedGuests.filter((guest: Guest) => guest.stay.centerId?.toString() === guestToDelete?.stay.centerId?.toString());
+        const updatedCenters = rescueCenters.map((center: RescueCenter) =>
+          center._id?.toString() === guestToDelete?.stay.centerId?.toString()
             ? {
                 ...center,
                 currentGuests: centerGuests.length,
                 availableCapacity: center.totalCapacity - centerGuests.length,
                 status: centerGuests.length >= center.totalCapacity ? 'full' as const : 'active' as const,
-                lastUpdated: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
+                lastUpdated: new Date(),
+                updatedAt: new Date()
               }
             : center
         );
@@ -723,16 +763,16 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   // Cross-platform sync operations
   const syncCenterCapacity = useCallback(async (centerId: string): Promise<void> => {
     try {
-      const centerGuests = guests.filter(guest => guest.centerId === centerId);
-      const updatedCenters = rescueCenters.map(center =>
-        center.id === centerId
+      const centerGuests = guests.filter((guest: Guest) => guest.stay.centerId?.toString() === centerId);
+      const updatedCenters = rescueCenters.map((center: RescueCenter) =>
+        center._id?.toString() === centerId
           ? {
               ...center,
               currentGuests: centerGuests.length,
               availableCapacity: center.totalCapacity - centerGuests.length,
               status: centerGuests.length >= center.totalCapacity ? 'full' as const : 'active' as const,
-              lastUpdated: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
+              lastUpdated: new Date(),
+              updatedAt: new Date()
             }
           : center
       );
@@ -746,9 +786,9 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
 
   const getDisasterStats = async (): Promise<DisasterStats> => {
     try {
-      return await supabaseDatabaseService.getDisasterStats();
+      return await httpDatabaseService.getDisasterStats();
     } catch (error) {
-      console.log('Supabase unavailable, calculating stats locally');
+      console.log('Server API unavailable, calculating stats locally');
       
       // Fallback to local calculation
       const totalCenters = rescueCenters.length;
@@ -784,9 +824,9 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
 
   const searchGuests = async (query: string): Promise<Guest[]> => {
     try {
-      return await supabaseDatabaseService.searchGuests(query);
+      return await httpDatabaseService.searchGuests(query);
     } catch (error) {
-      console.log('Supabase unavailable, searching guests locally');
+      console.log('Server API unavailable, searching guests locally');
       
       // Fallback to local search
       const searchTerm = query.toLowerCase();
@@ -803,10 +843,10 @@ export const UnifiedDatabaseProvider: React.FC<{ children: React.ReactNode }> = 
   const refreshData = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      // Try to fetch fresh data from Supabase
+      // Try to fetch fresh data from server API
       const [freshCenters, freshGuests] = await Promise.all([
-        supabaseDatabaseService.getAllCenters(),
-        supabaseDatabaseService.getAllGuests()
+        httpDatabaseService.getAllCenters(),
+        httpDatabaseService.getAllGuests()
       ]);
       
       setRescueCenters(freshCenters);

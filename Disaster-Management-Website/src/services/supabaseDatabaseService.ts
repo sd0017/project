@@ -1,6 +1,44 @@
-import { supabase, Database } from '../utils/supabase/client';
-import { ENV } from '../utils/env';
-import { PostgrestError } from '@supabase/supabase-js';
+import mongoService from './mongoService';
+
+// Re-export existing types for compatibility
+export interface RescueCenter {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  totalCapacity: number;
+  currentGuests: number;
+  availableCapacity: number;
+  waterLevel: number; // 0-100
+  foodLevel: number; // 0-100
+  phone: string;
+  address: string;
+  facilities: string[];
+  status: 'active' | 'inactive' | 'full';
+  lastUpdated: string;
+  emergencyContacts: {
+    primary: string;
+    secondary?: string;
+  };
+  export const supabaseDatabaseService = new SupabaseDatabaseService();
+      throw new Error('DATABASE_UNAVAILABLE');
+    }
+  }
+
+  // Real-time subscriptions are not supported in this frontend Mongo wrapper.
+  subscribeToRescueCenters(_callback: (centers: RescueCenter[]) => void) {
+    console.warn('Realtime subscriptions not supported for Mongo in the frontend.');
+    return null;
+  }
+
+  subscribeToGuests(_callback: (guests: Guest[]) => void) {
+    console.warn('Realtime subscriptions not supported for Mongo in the frontend.');
+    return null;
+  }
+}
+
+export const supabaseDatabaseService = new SupabaseDatabaseService();
+import mongoService from './mongoService';
 
 // Re-export existing types for compatibility
 export interface RescueCenter {
@@ -29,519 +67,410 @@ export interface RescueCenter {
   };
   staffCount: number;
   createdAt: string;
-  updatedAt: string;
-}
+  import mongoService from './mongoService';
 
-export interface Guest {
-  id: string;
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  gender: string;
-  dateOfBirth?: string;
-  age?: string;
-  mobilePhone: string;
-  alternateMobile?: string;
-  email?: string;
-  permanentAddress?: string;
-  familyMembers?: string;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
-  emergencyContactRelation?: string;
-  dependents?: string;
-  medicalConditions?: string;
-  currentMedications?: string;
-  allergies?: string;
-  disabilityStatus?: string;
-  specialNeeds?: string;
-  centerId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface DisasterStats {
-  totalCenters: number;
-  totalCapacity: number;
-  totalOccupancy: number;
-  availableSpace: number;
-  centersWithCriticalSupplies: number;
-  recentlyUpdatedCenters: number;
-  averageOccupancyRate: number;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  role: 'citizen' | 'government' | 'rescue_center';
-  employeeId?: string;
-  centerId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Type aliases for Supabase database rows
-type SupabaseRescueCenter = Database['public']['Tables']['rescue_centers']['Row'];
-type SupabaseGuest = Database['public']['Tables']['guests']['Row'];
-type SupabaseUser = Database['public']['Tables']['users']['Row'];
-
-class SupabaseDatabaseService {
-  private isOnline = true;
-  private connectionTimeout = 10000; // 10 seconds timeout
-  
-  // Create a promise that rejects after a timeout
-  private withTimeout<T>(promise: Promise<T>, timeoutMs: number = this.connectionTimeout): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timeout')), timeoutMs)
-      )
-    ]);
-  }
-  
-  // Utility methods for data transformation
-  private mapSupabaseCenterToLocal(supabaseCenter: SupabaseRescueCenter): RescueCenter {
-    return {
-      id: supabaseCenter.id,
-      name: supabaseCenter.name,
-      lat: supabaseCenter.lat,
-      lng: supabaseCenter.lng,
-      totalCapacity: supabaseCenter.total_capacity,
-      currentGuests: supabaseCenter.current_guests,
-      availableCapacity: supabaseCenter.available_capacity,
-      waterLevel: supabaseCenter.water_level,
-      foodLevel: supabaseCenter.food_level,
-      phone: supabaseCenter.phone,
-      address: supabaseCenter.address,
-      facilities: supabaseCenter.facilities,
-      status: supabaseCenter.status,
-      lastUpdated: supabaseCenter.last_updated,
-      emergencyContacts: supabaseCenter.emergency_contacts,
-      supplies: supabaseCenter.supplies,
-      staffCount: supabaseCenter.staff_count,
-      createdAt: supabaseCenter.created_at,
-      updatedAt: supabaseCenter.updated_at,
+  // Re-export existing types for compatibility
+  export interface RescueCenter {
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    totalCapacity: number;
+    currentGuests: number;
+    availableCapacity: number;
+    waterLevel: number; // 0-100
+    foodLevel: number; // 0-100
+    phone: string;
+    address: string;
+    facilities: string[];
+    status: 'active' | 'inactive' | 'full';
+    lastUpdated: string;
+    emergencyContacts: {
+      primary: string;
+      secondary?: string;
     };
-  }
-
-  private mapLocalCenterToSupabase(localCenter: Partial<RescueCenter>): Database['public']['Tables']['rescue_centers']['Insert'] {
-    return {
-      id: localCenter.id,
-      name: localCenter.name!,
-      lat: localCenter.lat!,
-      lng: localCenter.lng!,
-      total_capacity: localCenter.totalCapacity!,
-      current_guests: localCenter.currentGuests || 0,
-      available_capacity: localCenter.availableCapacity || localCenter.totalCapacity || 0,
-      water_level: localCenter.waterLevel!,
-      food_level: localCenter.foodLevel!,
-      phone: localCenter.phone!,
-      address: localCenter.address!,
-      facilities: localCenter.facilities!,
-      status: localCenter.status || 'active',
-      last_updated: localCenter.lastUpdated || new Date().toISOString(),
-      emergency_contacts: localCenter.emergencyContacts!,
-      supplies: localCenter.supplies!,
-      staff_count: localCenter.staffCount!,
-      created_at: localCenter.createdAt,
-      updated_at: localCenter.updatedAt || new Date().toISOString(),
+    supplies: {
+      medical: number; // 0-100
+      bedding: number; // 0-100
+      clothing: number; // 0-100
     };
+    staffCount: number;
+    createdAt: string;
+    updatedAt: string;
   }
 
-  private mapSupabaseGuestToLocal(supabaseGuest: SupabaseGuest): Guest {
-    return {
-      id: supabaseGuest.id,
-      firstName: supabaseGuest.first_name,
-      middleName: supabaseGuest.middle_name,
-      lastName: supabaseGuest.last_name,
-      gender: supabaseGuest.gender,
-      dateOfBirth: supabaseGuest.date_of_birth,
-      age: supabaseGuest.age,
-      mobilePhone: supabaseGuest.mobile_phone,
-      alternateMobile: supabaseGuest.alternate_mobile,
-      email: supabaseGuest.email,
-      permanentAddress: supabaseGuest.permanent_address,
-      familyMembers: supabaseGuest.family_members,
-      emergencyContactName: supabaseGuest.emergency_contact_name,
-      emergencyContactPhone: supabaseGuest.emergency_contact_phone,
-      emergencyContactRelation: supabaseGuest.emergency_contact_relation,
-      dependents: supabaseGuest.dependents,
-      medicalConditions: supabaseGuest.medical_conditions,
-      currentMedications: supabaseGuest.current_medications,
-      allergies: supabaseGuest.allergies,
-      disabilityStatus: supabaseGuest.disability_status,
-      specialNeeds: supabaseGuest.special_needs,
-      centerId: supabaseGuest.center_id,
-      createdAt: supabaseGuest.created_at,
-      updatedAt: supabaseGuest.updated_at,
-    };
+  export interface Guest {
+    id: string;
+    firstName: string;
+    middleName?: string;
+    lastName: string;
+    gender: string;
+    dateOfBirth?: string;
+    age?: string;
+    mobilePhone: string;
+    alternateMobile?: string;
+    email?: string;
+    permanentAddress?: string;
+    familyMembers?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+    emergencyContactRelation?: string;
+    dependents?: string;
+    medicalConditions?: string;
+    currentMedications?: string;
+    allergies?: string;
+    disabilityStatus?: string;
+    specialNeeds?: string;
+    centerId: string;
+    createdAt: string;
+    updatedAt: string;
   }
 
-  private mapLocalGuestToSupabase(localGuest: Partial<Guest>): Database['public']['Tables']['guests']['Insert'] {
-    return {
-      id: localGuest.id,
-      first_name: localGuest.firstName!,
-      middle_name: localGuest.middleName,
-      last_name: localGuest.lastName!,
-      gender: localGuest.gender!,
-      date_of_birth: localGuest.dateOfBirth,
-      age: localGuest.age,
-      mobile_phone: localGuest.mobilePhone!,
-      alternate_mobile: localGuest.alternateMobile,
-      email: localGuest.email,
-      permanent_address: localGuest.permanentAddress,
-      family_members: localGuest.familyMembers,
-      emergency_contact_name: localGuest.emergencyContactName,
-      emergency_contact_phone: localGuest.emergencyContactPhone,
-      emergency_contact_relation: localGuest.emergencyContactRelation,
-      dependents: localGuest.dependents,
-      medical_conditions: localGuest.medicalConditions,
-      current_medications: localGuest.currentMedications,
-      allergies: localGuest.allergies,
-      disability_status: localGuest.disabilityStatus,
-      special_needs: localGuest.specialNeeds,
-      center_id: localGuest.centerId!,
-      created_at: localGuest.createdAt,
-      updated_at: localGuest.updatedAt || new Date().toISOString(),
-    };
+  export interface DisasterStats {
+    totalCenters: number;
+    totalCapacity: number;
+    totalOccupancy: number;
+    availableSpace: number;
+    centersWithCriticalSupplies: number;
+    recentlyUpdatedCenters: number;
+    averageOccupancyRate: number;
   }
 
-  // Error handling for offline mode
-  private handleSupabaseError(error: PostgrestError | null, operation: string) {
-    if (error) {
-      console.error(`Supabase ${operation} error:`, error.message);
-      this.isOnline = false;
-      throw new Error(`SUPABASE_UNAVAILABLE: ${error.message}`);
-    }
+  export interface User {
+    id: string;
+    email: string;
+    role: 'citizen' | 'government' | 'rescue_center';
+    employeeId?: string;
+    centerId?: string;
+    createdAt: string;
+    updatedAt: string;
   }
 
-  // Check if Supabase is properly configured
-  private isSupabaseConfigured(): boolean {
-    try {
-      return ENV.isSupabaseConfigured();
-    } catch (error) {
-      console.log('Supabase configuration check failed, using offline mode');
-      return false;
-    }
-  }
+  class SupabaseDatabaseService {
+    private isOnline = true;
 
-  // Rescue Center operations
-  async getAllCenters(): Promise<RescueCenter[]> {
-    if (!this.isSupabaseConfigured()) {
-      console.log('Supabase not configured, using fallback mode');
-      throw new Error('SUPABASE_UNAVAILABLE');
+    // Check if Mongo is configured (frontend VITE_MONGO_URI) or connected via mongoService
+    private isMongoConfigured(): boolean {
+      try {
+        const envUri = (import.meta as any).env?.VITE_MONGO_URI;
+        return !!envUri || mongoService.isConnected();
+      } catch (err) {
+        return mongoService.isConnected();
+      }
     }
 
-    try {
-      const query = supabase
-        .from('rescue_centers')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      const { data, error } = await this.withTimeout(query);
-
-      this.handleSupabaseError(error, 'getAllCenters');
-      this.isOnline = true;
-
-      return (data || []).map(this.mapSupabaseCenterToLocal);
-    } catch (error) {
-      console.log('Supabase unavailable, falling back to local data:', error);
-      this.isOnline = false;
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async getCenterById(id: string): Promise<RescueCenter | null> {
-    try {
-      const { data, error } = await supabase
-        .from('rescue_centers')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
-        this.handleSupabaseError(error, 'getCenterById');
+    // Rescue Center operations
+    async getAllCenters(): Promise<RescueCenter[]> {
+      if (!this.isMongoConfigured()) {
+        console.log('MongoDB not configured, database unavailable');
+        throw new Error('DATABASE_UNAVAILABLE');
       }
 
-      this.isOnline = true;
-      return data ? this.mapSupabaseCenterToLocal(data) : null;
-    } catch (error) {
-      console.log('Supabase unavailable for getCenterById');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async createCenter(centerData: Omit<RescueCenter, 'id' | 'createdAt' | 'updatedAt'>): Promise<RescueCenter> {
-    try {
-      const now = new Date().toISOString();
-      const newCenter = {
-        ...centerData,
-        id: `RC${Date.now()}`, // Generate a unique ID
-        createdAt: now,
-        updatedAt: now,
-        currentGuests: 0,
-        availableCapacity: centerData.totalCapacity,
-        lastUpdated: now,
-      };
-
-      const supabaseData = this.mapLocalCenterToSupabase(newCenter);
-      
-      const { data, error } = await supabase
-        .from('rescue_centers')
-        .insert([supabaseData])
-        .select()
-        .single();
-
-      this.handleSupabaseError(error, 'createCenter');
-      this.isOnline = true;
-
-      return this.mapSupabaseCenterToLocal(data);
-    } catch (error) {
-      console.log('Supabase unavailable for createCenter');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async updateCenter(id: string, updates: Partial<RescueCenter>): Promise<RescueCenter> {
-    try {
-      const updateData = this.mapLocalCenterToSupabase({
-        ...updates,
-        updatedAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString(),
-      });
-
-      const { data, error } = await supabase
-        .from('rescue_centers')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      this.handleSupabaseError(error, 'updateCenter');
-      this.isOnline = true;
-
-      return this.mapSupabaseCenterToLocal(data);
-    } catch (error) {
-      console.log('Supabase unavailable for updateCenter');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async deleteCenter(id: string): Promise<void> {
-    try {
-      // First delete all guests in the center
-      await supabase
-        .from('guests')
-        .delete()
-        .eq('center_id', id);
-
-      // Then delete the center
-      const { error } = await supabase
-        .from('rescue_centers')
-        .delete()
-        .eq('id', id);
-
-      this.handleSupabaseError(error, 'deleteCenter');
-      this.isOnline = true;
-    } catch (error) {
-      console.log('Supabase unavailable for deleteCenter');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  // Guest operations
-  async getAllGuests(): Promise<Guest[]> {
-    if (!this.isSupabaseConfigured()) {
-      console.log('Supabase not configured, using fallback mode');
-      throw new Error('SUPABASE_UNAVAILABLE');
+      try {
+        const coll = mongoService.getCollection<RescueCenter>('rescue_centers');
+        const docs = await coll.find({}).sort({ createdAt: -1 }).toArray();
+        this.isOnline = true;
+        return docs as RescueCenter[];
+      } catch (err) {
+        console.error('Error in getAllCenters', err);
+        this.isOnline = false;
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
     }
 
-    try {
-      const query = supabase
-        .from('guests')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      const { data, error } = await this.withTimeout(query);
-
-      this.handleSupabaseError(error, 'getAllGuests');
-      this.isOnline = true;
-
-      return (data || []).map(this.mapSupabaseGuestToLocal);
-    } catch (error) {
-      console.log('Supabase unavailable for getAllGuests');
-      throw new Error('SUPABASE_UNAVAILABLE');
+    async getCenterById(id: string): Promise<RescueCenter | null> {
+      try {
+        const coll = mongoService.getCollection<RescueCenter>('rescue_centers');
+        const doc = await coll.findOne({ id });
+        this.isOnline = true;
+        return doc || null;
+      } catch (err) {
+        console.error('Error in getCenterById', err);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
     }
-  }
 
-  async getGuestsByCenter(centerId: string): Promise<Guest[]> {
-    try {
-      const { data, error } = await supabase
-        .from('guests')
-        .select('*')
-        .eq('center_id', centerId)
-        .order('created_at', { ascending: false });
+    async createCenter(centerData: Omit<RescueCenter, 'id' | 'createdAt' | 'updatedAt'>): Promise<RescueCenter> {
+      try {
+        const now = new Date().toISOString();
+        const newCenter = {
+          ...centerData,
+          id: `RC${Date.now()}`, // Generate a unique ID
+          createdAt: now,
+          updatedAt: now,
+          currentGuests: 0,
+          availableCapacity: centerData.totalCapacity,
+          lastUpdated: now,
+        } as RescueCenter;
 
-      this.handleSupabaseError(error, 'getGuestsByCenter');
-      this.isOnline = true;
+        const coll = mongoService.getCollection<RescueCenter>('rescue_centers');
+        await coll.insertOne(newCenter);
+        this.isOnline = true;
 
-      return (data || []).map(this.mapSupabaseGuestToLocal);
-    } catch (error) {
-      console.log('Supabase unavailable for getGuestsByCenter');
-      throw new Error('SUPABASE_UNAVAILABLE');
+        return newCenter;
+      } catch (error) {
+        console.log('Database unavailable for createCenter', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
     }
-  }
 
-  async getGuestById(id: string): Promise<Guest | null> {
-    try {
-      const { data, error } = await supabase
-        .from('guests')
-        .select('*')
-        .eq('id', id)
-        .single();
+    async updateCenter(id: string, updates: Partial<RescueCenter>): Promise<RescueCenter> {
+      try {
+        const coll = mongoService.getCollection<RescueCenter>('rescue_centers');
+        const updatedAt = new Date().toISOString();
+        await coll.updateOne({ id }, { $set: { ...updates, updatedAt, lastUpdated: updatedAt } });
+        const doc = await coll.findOne({ id });
+        if (!doc) throw new Error('NOT_FOUND');
+        this.isOnline = true;
+        return doc as RescueCenter;
+      } catch (error) {
+        console.log('Database unavailable for updateCenter', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
 
-      if (error && error.code !== 'PGRST116') {
-        this.handleSupabaseError(error, 'getGuestById');
+    async deleteCenter(id: string): Promise<void> {
+      try {
+        const guestsColl = mongoService.getCollection<Guest>('guests');
+        await guestsColl.deleteMany({ centerId: id });
+
+        const centersColl = mongoService.getCollection<RescueCenter>('rescue_centers');
+        await centersColl.deleteOne({ id });
+        this.isOnline = true;
+      } catch (error) {
+        console.log('Database unavailable for deleteCenter', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    // Guest operations
+    async getAllGuests(): Promise<Guest[]> {
+      if (!this.isMongoConfigured()) {
+        console.log('MongoDB not configured, using fallback mode');
+        throw new Error('DATABASE_UNAVAILABLE');
       }
 
-      this.isOnline = true;
-      return data ? this.mapSupabaseGuestToLocal(data) : null;
-    } catch (error) {
-      console.log('Supabase unavailable for getGuestById');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async createGuest(guestData: Omit<Guest, 'id' | 'createdAt' | 'updatedAt'>): Promise<Guest> {
-    try {
-      const now = new Date().toISOString();
-      const newGuest = {
-        ...guestData,
-        id: `GUEST${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      const supabaseData = this.mapLocalGuestToSupabase(newGuest);
-      
-      const { data, error } = await supabase
-        .from('guests')
-        .insert([supabaseData])
-        .select()
-        .single();
-
-      this.handleSupabaseError(error, 'createGuest');
-
-      // Update center capacity
-      await this.updateCenterCapacity(guestData.centerId);
-      
-      this.isOnline = true;
-      return this.mapSupabaseGuestToLocal(data);
-    } catch (error) {
-      console.log('Supabase unavailable for createGuest');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async updateGuest(id: string, updates: Partial<Guest>): Promise<Guest> {
-    try {
-      const updateData = this.mapLocalGuestToSupabase({
-        ...updates,
-        updatedAt: new Date().toISOString(),
-      });
-
-      const { data, error } = await supabase
-        .from('guests')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      this.handleSupabaseError(error, 'updateGuest');
-      this.isOnline = true;
-
-      return this.mapSupabaseGuestToLocal(data);
-    } catch (error) {
-      console.log('Supabase unavailable for updateGuest');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  async deleteGuest(id: string): Promise<void> {
-    try {
-      // Get the guest to find their center ID before deletion
-      const guest = await this.getGuestById(id);
-      
-      const { error } = await supabase
-        .from('guests')
-        .delete()
-        .eq('id', id);
-
-      this.handleSupabaseError(error, 'deleteGuest');
-
-      // Update center capacity if we found the guest
-      if (guest) {
-        await this.updateCenterCapacity(guest.centerId);
+      try {
+        const coll = mongoService.getCollection<Guest>('guests');
+        const docs = await coll.find({}).sort({ createdAt: -1 }).toArray();
+        this.isOnline = true;
+        return docs as Guest[];
+      } catch (error) {
+        console.log('Database unavailable for getAllGuests', error);
+        throw new Error('DATABASE_UNAVAILABLE');
       }
-      
-      this.isOnline = true;
-    } catch (error) {
-      console.log('Supabase unavailable for deleteGuest');
-      throw new Error('SUPABASE_UNAVAILABLE');
+    }
+
+    async getGuestsByCenter(centerId: string): Promise<Guest[]> {
+      try {
+        const coll = mongoService.getCollection<Guest>('guests');
+        const docs = await coll.find({ centerId }).sort({ createdAt: -1 }).toArray();
+        this.isOnline = true;
+        return docs as Guest[];
+      } catch (error) {
+        console.log('Database unavailable for getGuestsByCenter', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    async getGuestById(id: string): Promise<Guest | null> {
+      try {
+        const coll = mongoService.getCollection<Guest>('guests');
+        const doc = await coll.findOne({ id });
+        this.isOnline = true;
+        return doc || null;
+      } catch (error) {
+        console.log('Database unavailable for getGuestById', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    async createGuest(guestData: Omit<Guest, 'id' | 'createdAt' | 'updatedAt'>): Promise<Guest> {
+      try {
+        const now = new Date().toISOString();
+        const newGuest = {
+          ...guestData,
+          id: `GUEST${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+          createdAt: now,
+          updatedAt: now,
+        } as Guest;
+
+        const coll = mongoService.getCollection<Guest>('guests');
+        await coll.insertOne(newGuest);
+
+        // Update center capacity
+        await this.updateCenterCapacity(newGuest.centerId);
+
+        this.isOnline = true;
+        return newGuest;
+      } catch (error) {
+        console.log('Database unavailable for createGuest', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    async updateGuest(id: string, updates: Partial<Guest>): Promise<Guest> {
+      try {
+        const coll = mongoService.getCollection<Guest>('guests');
+        const updatedAt = new Date().toISOString();
+        await coll.updateOne({ id }, { $set: { ...updates, updatedAt } });
+        const doc = await coll.findOne({ id });
+        if (!doc) throw new Error('NOT_FOUND');
+        this.isOnline = true;
+        return doc as Guest;
+      } catch (error) {
+        console.log('Database unavailable for updateGuest', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    async deleteGuest(id: string): Promise<void> {
+      try {
+        const coll = mongoService.getCollection<Guest>('guests');
+        const guest = await coll.findOne({ id });
+        await coll.deleteOne({ id });
+        if (guest) await this.updateCenterCapacity(guest.centerId);
+        this.isOnline = true;
+      } catch (error) {
+        console.log('Database unavailable for deleteGuest', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    async searchGuests(query: string): Promise<Guest[]> {
+      try {
+        const coll = mongoService.getCollection<Guest>('guests');
+        const regex = new RegExp(query, 'i');
+        const docs = await coll
+          .find({ $or: [ { firstName: regex }, { lastName: regex }, { mobilePhone: regex }, { email: regex } ] })
+          .sort({ createdAt: -1 })
+          .toArray();
+        this.isOnline = true;
+        return docs as Guest[];
+      } catch (error) {
+        console.log('Database unavailable for searchGuests', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    // Utility method to update center capacity
+    private async updateCenterCapacity(centerId: string): Promise<void> {
+      try {
+        const guestsColl = mongoService.getCollection<Guest>('guests');
+        const centersColl = mongoService.getCollection<RescueCenter>('rescue_centers');
+
+        const currentGuests = await guestsColl.countDocuments({ centerId });
+
+        const center = await centersColl.findOne({ id: centerId });
+        if (!center) return;
+
+        const availableCapacity = (center.totalCapacity || 0) - currentGuests;
+        const status = currentGuests >= (center.totalCapacity || 0) ? 'full' : 'active';
+
+        await centersColl.updateOne({ id: centerId }, {
+          $set: {
+            currentGuests,
+            availableCapacity,
+            status,
+            lastUpdated: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        });
+      } catch (err) {
+        console.error('Error updating center capacity', err);
+      }
+    }
+
+    // Statistics
+    async getDisasterStats(): Promise<DisasterStats> {
+      try {
+        const centersColl = mongoService.getCollection<RescueCenter>('rescue_centers');
+        const guestsColl = mongoService.getCollection<Guest>('guests');
+
+        const [centers, guestCount] = await Promise.all([
+          centersColl.find({}).toArray(),
+          guestsColl.countDocuments(),
+        ]);
+
+        const totalCenters = centers.length;
+        const totalCapacity = centers.reduce((sum, c) => sum + (c.totalCapacity || 0), 0);
+        const totalOccupancy = guestCount;
+        const availableSpace = totalCapacity - totalOccupancy;
+
+        const centersWithCriticalSupplies = centers.filter(center =>
+          (center.waterLevel || 0) < 30 || (center.foodLevel || 0) < 30 || (center.supplies?.medical || 0) < 30
+        ).length;
+
+        const now = new Date();
+        const recentlyUpdatedCenters = centers.filter(center => {
+          const lastUpdated = new Date(center.lastUpdated);
+          const diffInHours = (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+          return diffInHours <= 2;
+        }).length;
+
+        const averageOccupancyRate = totalCapacity > 0 ? (totalOccupancy / totalCapacity) * 100 : 0;
+
+        this.isOnline = true;
+        return {
+          totalCenters,
+          totalCapacity,
+          totalOccupancy,
+          availableSpace,
+          centersWithCriticalSupplies,
+          recentlyUpdatedCenters,
+          averageOccupancyRate,
+        };
+      } catch (error) {
+        console.log('Database unavailable for getDisasterStats', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    // Authentication methods (users collection)
+    async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+      try {
+        const now = new Date().toISOString();
+        const usersColl = mongoService.getCollection<User>('users');
+        const newUser = {
+          ...userData,
+          id: `USER${Date.now()}`,
+          createdAt: now,
+          updatedAt: now,
+        } as User;
+        await usersColl.insertOne(newUser);
+        this.isOnline = true;
+        return newUser;
+      } catch (error) {
+        console.log('Database unavailable for createUser', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    async getUserByEmail(email: string): Promise<User | null> {
+      try {
+        const usersColl = mongoService.getCollection<User>('users');
+        const user = await usersColl.findOne({ email });
+        this.isOnline = true;
+        return user || null;
+      } catch (error) {
+        console.log('Database unavailable for getUserByEmail', error);
+        throw new Error('DATABASE_UNAVAILABLE');
+      }
+    }
+
+    // Real-time subscriptions are not supported in this frontend Mongo wrapper.
+    subscribeToRescueCenters(_callback: (centers: RescueCenter[]) => void) {
+      console.warn('Realtime subscriptions not supported for Mongo in the frontend.');
+      return null;
+    }
+
+    subscribeToGuests(_callback: (guests: Guest[]) => void) {
+      console.warn('Realtime subscriptions not supported for Mongo in the frontend.');
+      return null;
     }
   }
 
-  async searchGuests(query: string): Promise<Guest[]> {
-    try {
-      const { data, error } = await supabase
-        .from('guests')
-        .select('*')
-        .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,mobile_phone.ilike.%${query}%,email.ilike.%${query}%`)
-        .order('created_at', { ascending: false });
-
-      this.handleSupabaseError(error, 'searchGuests');
-      this.isOnline = true;
-
-      return (data || []).map(this.mapSupabaseGuestToLocal);
-    } catch (error) {
-      console.log('Supabase unavailable for searchGuests');
-      throw new Error('SUPABASE_UNAVAILABLE');
-    }
-  }
-
-  // Utility method to update center capacity
-  private async updateCenterCapacity(centerId: string): Promise<void> {
-    try {
-      // Get current guest count for the center
-      const { data: guests, error: guestError } = await supabase
-        .from('guests')
-        .select('id')
-        .eq('center_id', centerId);
-
-      if (guestError) {
-        console.error('Error getting guest count:', guestError);
-        return;
-      }
-
-      const currentGuests = guests?.length || 0;
-
-      // Get center to calculate available capacity
-      const { data: center, error: centerError } = await supabase
-        .from('rescue_centers')
-        .select('total_capacity')
-        .eq('id', centerId)
-        .single();
-
-      if (centerError) {
-        console.error('Error getting center data:', centerError);
-        return;
-      }
-
-      const availableCapacity = center.total_capacity - currentGuests;
-      const status = currentGuests >= center.total_capacity ? 'full' : 'active';
-
-      // Update center with new counts
-      await supabase
-        .from('rescue_centers')
+  export const supabaseDatabaseService = new SupabaseDatabaseService();
         .update({
           current_guests: currentGuests,
           available_capacity: availableCapacity,

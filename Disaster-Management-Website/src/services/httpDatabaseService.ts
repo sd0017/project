@@ -1,112 +1,239 @@
 import { backendApiService } from './backendApiService';
 import { mongoService } from './mongoService';
 
-// Frontend interfaces for the unified database
-export interface RescueCenter {
-  id: string;
+import { ObjectId } from 'mongodb';
+
+// Base interface for documents
+interface BaseDocument {
+  _id?: ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Frontend interfaces aligned with database types
+export interface RescueCenter extends BaseDocument {
   name: string;
-  lat: number;
-  lng: number;
+  location: {
+    type: 'Point';
+    coordinates: [number, number]; // [longitude, latitude]
+  };
   totalCapacity: number;
   currentGuests: number;
   availableCapacity: number;
-  waterLevel: number; // 0-100
-  foodLevel: number; // 0-100
-  phone: string;
-  address: string;
-  facilities: string[];
-  status: 'active' | 'inactive' | 'full';
-  lastUpdated: string;
-  emergencyContacts: {
-    primary: string;
-    secondary?: string;
-  };
-  supplies: {
+  resources: {
+    water: number; // 0-100
+    food: number; // 0-100
     medical: number; // 0-100
     bedding: number; // 0-100
     clothing: number; // 0-100
   };
+  contact: {
+    phone: string;
+    emergency: {
+      primary: string;
+      secondary?: string;
+    };
+  };
+  address: string;
+  facilities: string[];
+  status: 'active' | 'inactive' | 'full' | 'maintenance';
   staffCount: number;
-  createdAt: string;
-  updatedAt: string;
+  lastUpdated: Date;
 }
 
-export interface Guest {
-  id: string;
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  gender: string;
-  dateOfBirth?: string;
-  age?: string;
-  mobilePhone: string;
-  alternateMobile?: string;
-  email?: string;
-  permanentAddress?: string;
-  familyMembers?: string;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
-  emergencyContactRelation?: string;
-  dependents?: string;
-  medicalConditions?: string;
-  currentMedications?: string;
-  allergies?: string;
-  disabilityStatus?: string;
-  specialNeeds?: string;
-  centerId: string;
-  createdAt: string;
-  updatedAt: string;
+export interface Guest extends BaseDocument {
+  personalInfo: {
+    firstName: string;
+    middleName?: string;
+    lastName: string;
+    dateOfBirth?: Date;
+    age?: number;
+    gender?: string;
+    aadharNumber?: string;
+  };
+  contact: {
+    phone: string;
+    alternatePhone?: string;
+    email?: string;
+    address?: string;
+  };
+  emergency: {
+    contactName?: string;
+    contactPhone?: string;
+    relation?: string;
+  };
+  medical: {
+    conditions?: string[];
+    medications?: string[];
+    allergies?: string[];
+    specialNeeds?: string;
+  };
+  stay: {
+    centerId: ObjectId;
+    status: 'admitted' | 'discharged' | 'transferred';
+    admittedAt: Date;
+    dischargedAt?: Date;
+    transferredTo?: ObjectId;
+  };
+  family: {
+    size?: number;
+    members?: string[];
+  };
 }
 
-export interface DisasterStats {
+export interface DisasterStats extends BaseDocument {
   totalCenters: number;
-  totalCapacity: number;
-  totalOccupancy: number;
-  availableSpace: number;
-  centersWithCriticalSupplies: number;
-  recentlyUpdatedCenters: number;
-  averageOccupancyRate: number;
+  totalGuests: number;
+  availableCapacity: number;
+  occupancyRate: number;
+  resourceStatus: {
+    water: number; // 0-100
+    food: number; // 0-100
+    medical: number; // 0-100
+  };
+  criticalCenters: number;
+  lastUpdated: Date;
 }
 
 // Map API response to local interface
 const mapApiCenterToLocal = (apiCenter: any): RescueCenter => {
   return {
-    id: apiCenter.id,
+    _id: apiCenter.id ? new ObjectId(apiCenter.id) : undefined,
     name: apiCenter.name,
-    lat: apiCenter.latitude,
-    lng: apiCenter.longitude,
+    location: {
+      type: 'Point',
+      coordinates: [apiCenter.longitude || 0, apiCenter.latitude || 0]
+    },
     totalCapacity: apiCenter.capacity,
     currentGuests: apiCenter.current_occupancy || 0,
     availableCapacity: apiCenter.capacity - (apiCenter.current_occupancy || 0),
-    waterLevel: apiCenter.resources?.water || 0,
-    foodLevel: apiCenter.resources?.food || 0,
-    phone: apiCenter.contact_number,
-    address: apiCenter.address,
-    facilities: apiCenter.facilities || [],
-    status: apiCenter.status,
-    lastUpdated: apiCenter.last_updated,
-    emergencyContacts: {
-      primary: apiCenter.contact_number,
-    },
-    supplies: {
+    resources: {
+      water: apiCenter.resources?.water || 0,
+      food: apiCenter.resources?.food || 0,
       medical: apiCenter.resources?.medicine || 0,
       bedding: apiCenter.resources?.blankets || 0,
-      clothing: apiCenter.resources?.tents || 0, // Using tents as clothing proxy
+      clothing: apiCenter.resources?.clothing || 0,
     },
-    staffCount: 20, // Default staff count
-    createdAt: apiCenter.created_at || apiCenter.last_updated,
-    updatedAt: apiCenter.updated_at || apiCenter.last_updated
+    contact: {
+      phone: apiCenter.contact_number,
+      emergency: {
+        primary: apiCenter.emergency_contact || apiCenter.contact_number,
+        secondary: apiCenter.secondary_contact
+      }
+    },
+    address: apiCenter.address,
+    facilities: apiCenter.facilities || [],
+    status: apiCenter.status || 'active',
+    staffCount: apiCenter.staff_count || 20,
+    lastUpdated: new Date(apiCenter.last_updated),
+    createdAt: new Date(apiCenter.created_at || apiCenter.last_updated),
+    updatedAt: new Date(apiCenter.updated_at || apiCenter.last_updated)
   };
 };
 
 export class HttpDatabaseService {
+  // Helper methods for guest mapping
+  private mapApiGuestToLocal(apiGuest: any): Guest {
+    return {
+      _id: apiGuest._id ? new ObjectId(apiGuest._id) : new ObjectId(),
+      personalInfo: {
+        firstName: apiGuest.firstName || '',
+        lastName: apiGuest.lastName || '',
+        gender: apiGuest.gender,
+        dateOfBirth: apiGuest.dateOfBirth ? new Date(apiGuest.dateOfBirth) : undefined,
+        age: apiGuest.age,
+        aadharNumber: apiGuest.aadharNumber
+      },
+      contact: {
+        phone: apiGuest.phone || apiGuest.mobilePhone,
+        alternatePhone: apiGuest.alternatePhone || apiGuest.alternateMobile,
+        email: apiGuest.email,
+        address: apiGuest.address || apiGuest.permanentAddress
+      },
+      emergency: {
+        contactName: apiGuest.emergencyContactName,
+        contactPhone: apiGuest.emergencyContactPhone,
+        relation: apiGuest.emergencyContactRelation
+      },
+      medical: {
+        conditions: apiGuest.medicalConditions ? [apiGuest.medicalConditions] : undefined,
+        medications: apiGuest.currentMedications ? [apiGuest.currentMedications] : undefined,
+        allergies: apiGuest.allergies ? [apiGuest.allergies] : undefined,
+        specialNeeds: apiGuest.specialNeeds
+      },
+      stay: {
+        centerId: new ObjectId(apiGuest.centerId),
+        status: 'admitted',
+        admittedAt: apiGuest.createdAt ? new Date(apiGuest.createdAt) : new Date()
+      },
+      family: {
+        members: apiGuest.familyMembers ? [apiGuest.familyMembers] : undefined
+      },
+      createdAt: apiGuest.createdAt ? new Date(apiGuest.createdAt) : new Date(),
+      updatedAt: apiGuest.updatedAt ? new Date(apiGuest.updatedAt) : new Date()
+    };
+  }
+
+  private mapLocalGuestToApi(guest: Partial<Guest>): any {
+    const apiGuest: any = {};
+
+    if (guest.personalInfo) {
+      apiGuest.firstName = guest.personalInfo.firstName;
+      apiGuest.lastName = guest.personalInfo.lastName;
+      apiGuest.gender = guest.personalInfo.gender;
+      apiGuest.dateOfBirth = guest.personalInfo.dateOfBirth?.toISOString();
+      apiGuest.age = guest.personalInfo.age;
+      apiGuest.aadharNumber = guest.personalInfo.aadharNumber;
+    }
+
+    if (guest.contact) {
+      apiGuest.phone = guest.contact.phone;
+      apiGuest.alternatePhone = guest.contact.alternatePhone;
+      apiGuest.email = guest.contact.email;
+      apiGuest.address = guest.contact.address;
+    }
+
+    if (guest.emergency) {
+      apiGuest.emergencyContactName = guest.emergency.contactName;
+      apiGuest.emergencyContactPhone = guest.emergency.contactPhone;
+      apiGuest.emergencyContactRelation = guest.emergency.relation;
+    }
+
+    if (guest.medical) {
+      apiGuest.medicalConditions = guest.medical.conditions?.join(', ');
+      apiGuest.currentMedications = guest.medical.medications?.join(', ');
+      apiGuest.allergies = guest.medical.allergies?.join(', ');
+      apiGuest.specialNeeds = guest.medical.specialNeeds;
+    }
+
+    if (guest.stay) {
+      apiGuest.centerId = guest.stay.centerId.toString();
+      apiGuest.status = guest.stay.status;
+      apiGuest.admittedAt = guest.stay.admittedAt?.toISOString();
+      if (guest.stay.dischargedAt) {
+        apiGuest.dischargedAt = guest.stay.dischargedAt.toISOString();
+      }
+      if (guest.stay.transferredTo) {
+        apiGuest.transferredTo = guest.stay.transferredTo.toString();
+      }
+    }
+
+    if (guest.family) {
+      apiGuest.familyMembers = guest.family.members?.join(', ');
+      apiGuest.familySize = guest.family.size;
+    }
+
+    return apiGuest;
+  }
+
+  // Guest operations
   // Rescue Center operations
   async getAllCenters(): Promise<RescueCenter[]> {
     // Try MongoDB first if available
     if (mongoService.isMongoAvailable()) {
       try {
         const mongoCenters = await mongoService.getAllCenters();
-        return mongoCenters.map(this.mapMongoToHttp);
+        return mongoCenters;
       } catch (error) {
         console.log('MongoDB query failed, trying HTTP API');
       }
@@ -115,12 +242,9 @@ export class HttpDatabaseService {
     // Fallback to HTTP API
     try {
       const apiCenters = await backendApiService.get<any[]>('/centers');
-      
-      // Map API format to local format
       return apiCenters.map(mapApiCenterToLocal);
     } catch (error) {
       console.log('HTTP API unavailable, using mock data for centers');
-      // Return mock data as fallback
       return this.getMockCenters();
     }
   }
@@ -131,30 +255,26 @@ export class HttpDatabaseService {
       return mapApiCenterToLocal(apiCenter);
     } catch (error) {
       console.log('API unavailable, using mock data for center:', id);
-      // Fallback to mock data
       const mockCenters = this.getMockCenters();
-      return mockCenters.find(center => center.id === id) || null;
+      return mockCenters.find(center => center._id?.toString() === id) || null;
     }
   }
 
-  async createCenter(centerData: Omit<RescueCenter, 'id' | 'createdAt' | 'updatedAt'>): Promise<RescueCenter> {
+  async createCenter(centerData: Omit<RescueCenter, '_id' | 'createdAt' | 'updatedAt'>): Promise<RescueCenter> {
     try {
-      // Map local format to API format
+      // Map to API format
       const apiData = {
         name: centerData.name,
-        latitude: centerData.lat,
-        longitude: centerData.lng,
-        capacity: centerData.totalCapacity,
-        contactNumber: centerData.phone,
+        location: centerData.location,
+        totalCapacity: centerData.totalCapacity,
+        currentGuests: 0,
+        availableCapacity: centerData.totalCapacity,
+        resources: centerData.resources,
+        contact: centerData.contact,
         address: centerData.address,
         facilities: centerData.facilities,
-        resources: {
-          water: centerData.waterLevel,
-          food: centerData.foodLevel,
-          medicine: centerData.supplies.medical,
-          blankets: centerData.supplies.bedding,
-          tents: centerData.supplies.clothing
-        }
+        status: centerData.status,
+        staffCount: centerData.staffCount
       };
 
       const apiCenter = await backendApiService.post<any>('/centers', apiData);
@@ -167,27 +287,24 @@ export class HttpDatabaseService {
 
   async updateCenter(id: string, updates: Partial<RescueCenter>): Promise<RescueCenter> {
     try {
-      // Map local format to API format for updates
+      // Map to API format for updates
       const apiUpdates: any = {};
       
       if (updates.name) apiUpdates.name = updates.name;
-      if (updates.lat) apiUpdates.latitude = updates.lat;
-      if (updates.lng) apiUpdates.longitude = updates.lng;
-      if (updates.totalCapacity) apiUpdates.capacity = updates.totalCapacity;
-      if (updates.phone) apiUpdates.contact_number = updates.phone;
+      if (updates.location) apiUpdates.location = updates.location;
+      if (updates.totalCapacity) apiUpdates.totalCapacity = updates.totalCapacity;
+      if (updates.currentGuests !== undefined) {
+        apiUpdates.currentGuests = updates.currentGuests;
+        apiUpdates.availableCapacity = updates.totalCapacity 
+          ? updates.totalCapacity - updates.currentGuests 
+          : undefined;
+      }
+      if (updates.resources) apiUpdates.resources = updates.resources;
+      if (updates.contact) apiUpdates.contact = updates.contact;
       if (updates.address) apiUpdates.address = updates.address;
       if (updates.facilities) apiUpdates.facilities = updates.facilities;
       if (updates.status) apiUpdates.status = updates.status;
-      
-      if (updates.waterLevel || updates.foodLevel || updates.supplies) {
-        apiUpdates.resources = {
-          water: updates.waterLevel,
-          food: updates.foodLevel,
-          medicine: updates.supplies?.medical,
-          blankets: updates.supplies?.bedding,
-          tents: updates.supplies?.clothing
-        };
-      }
+      if (updates.staffCount) apiUpdates.staffCount = updates.staffCount;
 
       const apiCenter = await backendApiService.put<any>(`/centers/${id}`, apiUpdates);
       return mapApiCenterToLocal(apiCenter);
@@ -278,13 +395,20 @@ export class HttpDatabaseService {
       console.log('API unavailable, using mock disaster statistics');
       // Return mock stats as fallback
       return {
+        _id: new ObjectId(),
         totalCenters: 5,
-        totalCapacity: 1800,
-        totalOccupancy: 0,
-        availableSpace: 1800,
-        centersWithCriticalSupplies: 1,
-        recentlyUpdatedCenters: 5,
-        averageOccupancyRate: 0
+        totalGuests: 0,
+        availableCapacity: 1800,
+        occupancyRate: 0,
+        resourceStatus: {
+          water: 75,
+          food: 80,
+          medical: 70
+        },
+        criticalCenters: 1,
+        lastUpdated: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date()
       };
     }
   }
@@ -293,25 +417,21 @@ export class HttpDatabaseService {
   // Utility to convert MongoDB format to HTTP format
   private mapMongoToHttp(mongoCenter: any): RescueCenter {
     return {
-      id: mongoCenter.id,
+      _id: mongoCenter._id instanceof ObjectId ? mongoCenter._id : new ObjectId(mongoCenter._id),
       name: mongoCenter.name,
-      lat: mongoCenter.lat,
-      lng: mongoCenter.lng,
+      location: mongoCenter.location,
       totalCapacity: mongoCenter.totalCapacity,
       currentGuests: mongoCenter.currentGuests,
       availableCapacity: mongoCenter.availableCapacity,
-      waterLevel: mongoCenter.waterLevel,
-      foodLevel: mongoCenter.foodLevel,
-      phone: mongoCenter.phone,
+      resources: mongoCenter.resources,
+      contact: mongoCenter.contact,
       address: mongoCenter.address,
       facilities: mongoCenter.facilities,
       status: mongoCenter.status,
-      lastUpdated: mongoCenter.lastUpdated,
-      emergencyContacts: mongoCenter.emergencyContacts,
-      supplies: mongoCenter.supplies,
       staffCount: mongoCenter.staffCount,
-      createdAt: mongoCenter.createdAt,
-      updatedAt: mongoCenter.updatedAt
+      lastUpdated: mongoCenter.lastUpdated instanceof Date ? mongoCenter.lastUpdated : new Date(mongoCenter.lastUpdated),
+      createdAt: mongoCenter.createdAt instanceof Date ? mongoCenter.createdAt : new Date(mongoCenter.createdAt),
+      updatedAt: mongoCenter.updatedAt instanceof Date ? mongoCenter.updatedAt : new Date(mongoCenter.updatedAt)
     };
   }
 
@@ -319,142 +439,162 @@ export class HttpDatabaseService {
   private getMockCenters(): RescueCenter[] {
     return [
       {
-        id: 'RC001',
+        _id: new ObjectId(),
         name: 'Central Emergency Shelter',
-        lat: 12.9716,
-        lng: 77.5946,
+        location: {
+          type: 'Point',
+          coordinates: [77.5946, 12.9716]
+        },
         totalCapacity: 500,
         currentGuests: 0,
         availableCapacity: 500,
-        waterLevel: 85,
-        foodLevel: 70,
-        phone: '+91-80-2345-6789',
-        address: 'MG Road, Bangalore, Karnataka 560001',
-        facilities: ['Medical Aid', 'Sanitation', 'Power Backup', 'Communication', 'Kitchen'],
-        status: 'active',
-        lastUpdated: new Date().toISOString(),
-        emergencyContacts: {
-          primary: '+91-80-2345-6789',
-          secondary: '+91-80-2345-6790'
-        },
-        supplies: {
+        resources: {
+          water: 85,
+          food: 70,
           medical: 80,
           bedding: 75,
           clothing: 60
         },
+        contact: {
+          phone: '+91-80-2345-6789',
+          emergency: {
+            primary: '+91-80-2345-6789',
+            secondary: '+91-80-2345-6790'
+          }
+        },
+        address: 'MG Road, Bangalore, Karnataka 560001',
+        facilities: ['Medical Aid', 'Sanitation', 'Power Backup', 'Communication', 'Kitchen'],
+        status: 'active',
         staffCount: 25,
-        createdAt: '2024-01-15T10:00:00Z',
-        updatedAt: new Date().toISOString()
+        lastUpdated: new Date(),
+        createdAt: new Date('2024-01-15T10:00:00Z'),
+        updatedAt: new Date()
       },
       {
-        id: 'RC002',
+        _id: new ObjectId(),
         name: 'North Zone Emergency Hub',
-        lat: 12.9916,
-        lng: 77.6146,
+        location: {
+          type: 'Point',
+          coordinates: [77.6146, 12.9916]
+        },
         totalCapacity: 300,
         currentGuests: 0,
         availableCapacity: 300,
-        waterLevel: 95,
-        foodLevel: 60,
-        phone: '+91-80-2345-6791',
-        address: 'Hebbal Main Road, Bangalore, Karnataka 560024',
-        facilities: ['Medical Aid', 'Sanitation', 'Kitchen', 'Children Area'],
-        status: 'active',
-        lastUpdated: new Date().toISOString(),
-        emergencyContacts: {
-          primary: '+91-80-2345-6791'
-        },
-        supplies: {
+        resources: {
+          water: 95,
+          food: 60,
           medical: 90,
           bedding: 85,
           clothing: 70
         },
+        contact: {
+          phone: '+91-80-2345-6791',
+          emergency: {
+            primary: '+91-80-2345-6791'
+          }
+        },
+        address: 'Hebbal Main Road, Bangalore, Karnataka 560024',
+        facilities: ['Medical Aid', 'Sanitation', 'Kitchen', 'Children Area'],
+        status: 'active',
         staffCount: 18,
-        createdAt: '2024-01-20T09:00:00Z',
-        updatedAt: new Date().toISOString()
+        lastUpdated: new Date(),
+        createdAt: new Date('2024-01-20T09:00:00Z'),
+        updatedAt: new Date()
       },
       {
-        id: 'RC003',
+        _id: new ObjectId(),
         name: 'South District Relief Center',
-        lat: 12.9516,
-        lng: 77.5746,
+        location: {
+          type: 'Point',
+          coordinates: [77.5746, 12.9516]
+        },
         totalCapacity: 400,
         currentGuests: 0,
         availableCapacity: 400,
-        waterLevel: 40,
-        foodLevel: 30,
-        phone: '+91-80-2345-6792',
-        address: '4th Block, Jayanagar, Bangalore, Karnataka 560011',
-        facilities: ['Medical Aid', 'Sanitation', 'Power Backup'],
-        status: 'active',
-        lastUpdated: new Date().toISOString(),
-        emergencyContacts: {
-          primary: '+91-80-2345-6792',
-          secondary: '+91-80-2345-6793'
-        },
-        supplies: {
+        resources: {
+          water: 40,
+          food: 30,
           medical: 45,
           bedding: 30,
           clothing: 25
         },
+        contact: {
+          phone: '+91-80-2345-6792',
+          emergency: {
+            primary: '+91-80-2345-6792',
+            secondary: '+91-80-2345-6793'
+          }
+        },
+        address: '4th Block, Jayanagar, Bangalore, Karnataka 560011',
+        facilities: ['Medical Aid', 'Sanitation', 'Power Backup'],
+        status: 'active',
         staffCount: 20,
-        createdAt: '2024-01-18T14:00:00Z',
-        updatedAt: new Date().toISOString()
+        lastUpdated: new Date(),
+        createdAt: new Date('2024-01-18T14:00:00Z'),
+        updatedAt: new Date()
       },
       {
-        id: 'RC004',
+        _id: new ObjectId(),
         name: 'East Emergency Hub',
-        lat: 12.9816,
-        lng: 77.6346,
+        location: {
+          type: 'Point',
+          coordinates: [77.6346, 12.9816]
+        },
         totalCapacity: 250,
         currentGuests: 0,
         availableCapacity: 250,
-        waterLevel: 75,
-        foodLevel: 80,
-        phone: '+91-80-2345-6794',
-        address: 'ITPL Main Road, Whitefield, Bangalore, Karnataka 560066',
-        facilities: ['Medical Aid', 'Kitchen', 'Communication', 'WiFi'],
-        status: 'active',
-        lastUpdated: new Date().toISOString(),
-        emergencyContacts: {
-          primary: '+91-80-2345-6794'
-        },
-        supplies: {
+        resources: {
+          water: 75,
+          food: 80,
           medical: 85,
           bedding: 90,
           clothing: 80
         },
+        contact: {
+          phone: '+91-80-2345-6794',
+          emergency: {
+            primary: '+91-80-2345-6794'
+          }
+        },
+        address: 'ITPL Main Road, Whitefield, Bangalore, Karnataka 560066',
+        facilities: ['Medical Aid', 'Kitchen', 'Communication', 'WiFi'],
+        status: 'active',
         staffCount: 15,
-        createdAt: '2024-01-22T11:00:00Z',
-        updatedAt: new Date().toISOString()
+        lastUpdated: new Date(),
+        createdAt: new Date('2024-01-22T11:00:00Z'),
+        updatedAt: new Date()
       },
       {
-        id: 'RC005',
+        _id: new ObjectId(),
         name: 'West Relief Station',
-        lat: 12.9616,
-        lng: 77.5546,
+        location: {
+          type: 'Point',
+          coordinates: [77.5546, 12.9616]
+        },
         totalCapacity: 350,
         currentGuests: 0,
         availableCapacity: 350,
-        waterLevel: 65,
-        foodLevel: 75,
-        phone: '+91-80-2345-6795',
-        address: 'Dr. Rajkumar Road, Rajajinagar, Bangalore, Karnataka 560010',
-        facilities: ['Medical Aid', 'Sanitation', 'Power Backup', 'Kitchen', 'Pharmacy'],
-        status: 'active',
-        lastUpdated: new Date().toISOString(),
-        emergencyContacts: {
-          primary: '+91-80-2345-6795',
-          secondary: '+91-80-2345-6796'
-        },
-        supplies: {
+        resources: {
+          water: 65,
+          food: 75,
           medical: 70,
           bedding: 65,
           clothing: 55
         },
+        contact: {
+          phone: '+91-80-2345-6795',
+          emergency: {
+            primary: '+91-80-2345-6795',
+            secondary: '+91-80-2345-6796'
+          }
+        },
+        address: 'Dr. Rajkumar Road, Rajajinagar, Bangalore, Karnataka 560010',
+        facilities: ['Medical Aid', 'Sanitation', 'Power Backup', 'Kitchen', 'Pharmacy'],
+        status: 'active',
         staffCount: 22,
-        createdAt: '2024-01-25T08:00:00Z',
-        updatedAt: new Date().toISOString()
+        lastUpdated: new Date(),
+        createdAt: new Date('2024-01-25T08:00:00Z'),
+        updatedAt: new Date()
       }
     ];
   }
